@@ -1,300 +1,591 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screw Studio - Light Export</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.all.min.js"></script>
-    <style>
-        body { background-color: #030303; color: #fff; font-family: 'Inter', sans-serif; }
-        .fx-card { background: #0a0a0a; border: 1px solid #1a1a1a; }
-        input[type="range"] { height: 4px; -webkit-appearance: none; background: #1a1a1a; border-radius: 10px; outline: none; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: #3b82f6; border-radius: 50%; cursor: pointer; }
-        #progressSlider { height: 6px; background: #222; }
-        #progressSlider::-webkit-slider-thumb { width: 16px; height: 16px; background: #fff; }
-        .knob-label { font-size: 8px; font-weight: 800; color: #444; text-transform: uppercase; letter-spacing: 0.1em; }
-    </style>
-</head>
-<body class="min-h-screen flex items-center justify-center p-4">
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, Download, Key, Plus, Trash2, Lock, Unlock, Sliders, Activity, ChevronDown, Zap } from 'lucide-react';
 
-    <div class="max-w-2xl w-full fx-card rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative">
-        <div class="flex justify-between items-center mb-8 border-b border-white/5 pb-6">
-            <div>
-                <h1 class="text-2xl font-black italic tracking-tighter uppercase">Screw<span class="text-blue-600">Studio</span></h1>
-                <p class="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em]">Compact Export Engine</p>
-            </div>
-            <div id="timeDisplay" class="text-[10px] font-mono text-blue-500 font-bold">0:00 / 0:00</div>
+// --- Curvas de Interpolação (Easing Functions) ---
+const EASING_FUNCTIONS = {
+  linear: (t) => t,
+  easeIn: (t) => t * t,
+  easeOut: (t) => t * (2 - t),
+  easeInOut: (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+  bounce: (t) => {
+    if (t < (1 / 2.75)) return 7.5625 * t * t;
+    else if (t < (2 / 2.75)) return 7.5625 * (t -= (1.5 / 2.75)) * t + 0.75;
+    else if (t < (2.5 / 2.75)) return 7.5625 * (t -= (2.25 / 2.75)) * t + 0.9375;
+    else return 7.5625 * (t -= (2.625 / 2.75)) * t + 0.984375;
+  },
+  elastic: (t) => {
+    if (t === 0 || t === 1) return t;
+    const p = 0.3;
+    const s = p / 4;
+    return Math.pow(2, -10 * t) * Math.sin((t - s) * (2 * Math.PI) / p) + 1;
+  },
+  step: (t) => t < 0.5 ? 0 : 1
+};
+
+const makeDistortionCurve = (amount) => {
+  const n = 44100;
+  const curve = new Float32Array(n);
+  const deg = Math.PI / 180;
+  for (let i = 0; i < n; ++i) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+};
+
+const App = () => {
+  const [audioBuffer, setAudioBuffer] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isReverse, setIsReverse] = useState(false);
+  const [format, setFormat] = useState('mp3');
+  const [activeParam, setActiveParam] = useState('pitch');
+  const [isLocked, setIsLocked] = useState(false);
+  const [controlMode, setControlMode] = useState('automate');
+  
+  const [params, setParams] = useState({
+    pitch: { val: 1.0, min: 0.1, max: 3.0, keys: [{ t: 0, v: 0.31, ease: 'easeInOut' }] },
+    tempo: { val: 1.0, min: 0.1, max: 2.0, keys: [{ t: 0, v: 0.47, ease: 'linear' }] },
+    filter: { val: 20000, min: 200, max: 20000, keys: [{ t: 0, v: 1.0, ease: 'linear' }] },
+    reverb: { val: 0, min: 0, max: 1, keys: [{ t: 0, v: 0, ease: 'linear' }] },
+    crunch: { val: 0, min: 0, max: 50, keys: [{ t: 0, v: 0, ease: 'linear' }] },
+  });
+
+  const audioCtx = useRef(null);
+  const sourceNode = useRef(null);
+  const nodes = useRef({});
+  const startTimeRef = useRef(0);
+  const offsetTimeRef = useRef(0);
+  const requestRef = useRef();
+
+  useEffect(() => {
+    if (isLocked) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = 'auto';
+      document.body.style.touchAction = 'auto';
+    }
+  }, [isLocked]);
+
+  useEffect(() => {
+    audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+    return () => audioCtx.current.close();
+  }, []);
+
+  const getInterpolatedValue = useCallback((paramKey, time) => {
+    const p = params[paramKey];
+    if (controlMode === 'slide') return p.val;
+
+    const keys = [...p.keys].sort((a, b) => a.t - b.t);
+    if (keys.length === 0) return p.val;
+    if (time <= keys[0].t) return keys[0].v * (p.max - p.min) + p.min;
+    if (time >= keys[keys.length - 1].t) return keys[keys.length - 1].v * (p.max - p.min) + p.min;
+
+    for (let i = 0; i < keys.length - 1; i++) {
+      const start = keys[i];
+      const end = keys[i + 1];
+      if (time >= start.t && time <= end.t) {
+        const tRange = end.t - start.t;
+        const progress = (time - start.t) / (tRange || 0.001);
+        const easingFn = EASING_FUNCTIONS[start.ease || 'linear'];
+        const easedProgress = easingFn(progress);
+        const vInterp = start.v + (end.v - start.v) * easedProgress;
+        return vInterp * (p.max - p.min) + p.min;
+      }
+    }
+    return p.val;
+  }, [params, controlMode]);
+
+  const updateAudioNodes = useCallback((time) => {
+    if (!isPlaying || !nodes.current.filter) return;
+    const pitch = getInterpolatedValue('pitch', time);
+    const tempo = getInterpolatedValue('tempo', time);
+    const filter = getInterpolatedValue('filter', time);
+    const reverb = getInterpolatedValue('reverb', time);
+    const crunch = getInterpolatedValue('crunch', time);
+
+    const targetTime = audioCtx.current.currentTime;
+    sourceNode.current.playbackRate.setTargetAtTime(pitch * tempo, targetTime, 0.05);
+    nodes.current.filter.frequency.setTargetAtTime(filter, targetTime, 0.05);
+    nodes.current.wetGain.gain.setTargetAtTime(reverb, targetTime, 0.05);
+    nodes.current.dryGain.gain.setTargetAtTime(1 - reverb * 0.5, targetTime, 0.05);
+    nodes.current.dist.curve = makeDistortionCurve(crunch);
+  }, [isPlaying, getInterpolatedValue]);
+
+  const animate = useCallback(() => {
+    if (!isPlaying) return;
+    const rate = getInterpolatedValue('pitch', offsetTimeRef.current) * getInterpolatedValue('tempo', offsetTimeRef.current);
+    const now = offsetTimeRef.current + (audioCtx.current.currentTime - startTimeRef.current) * rate;
+    if (now >= duration) { handleStop(true); return; }
+    setCurrentTime(now);
+    updateAudioNodes(now);
+    requestRef.current = requestAnimationFrame(animate);
+  }, [isPlaying, duration, getInterpolatedValue, updateAudioNodes]);
+
+  useEffect(() => {
+    if (isPlaying) requestRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(requestRef.current);
+  }, [isPlaying, animate]);
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const ab = await file.arrayBuffer();
+    const buffer = await audioCtx.current.decodeAudioData(ab);
+    setAudioBuffer(buffer);
+    setDuration(buffer.duration);
+  };
+
+  const handleStart = () => {
+    if (!audioBuffer) return;
+    if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
+    const bufferToUse = isReverse ? reverseBuffer(audioBuffer) : audioBuffer;
+    sourceNode.current = audioCtx.current.createBufferSource();
+    sourceNode.current.buffer = bufferToUse;
+    nodes.current.filter = audioCtx.current.createBiquadFilter();
+    nodes.current.filter.type = "lowpass";
+    nodes.current.dist = audioCtx.current.createWaveShaper();
+    nodes.current.dryGain = audioCtx.current.createGain();
+    nodes.current.wetGain = audioCtx.current.createGain();
+    nodes.current.reverb = audioCtx.current.createConvolver();
+    nodes.current.reverb.buffer = createReverbBuffer();
+    sourceNode.current.connect(nodes.current.filter);
+    nodes.current.filter.connect(nodes.current.dist);
+    nodes.current.dist.connect(nodes.current.dryGain);
+    nodes.current.dryGain.connect(audioCtx.current.destination);
+    nodes.current.dist.connect(nodes.current.reverb);
+    nodes.current.reverb.connect(nodes.current.wetGain);
+    nodes.current.wetGain.connect(audioCtx.current.destination);
+    const playAt = isReverse ? duration - currentTime : currentTime;
+    sourceNode.current.start(0, Math.max(0, playAt));
+    startTimeRef.current = audioCtx.current.currentTime;
+    offsetTimeRef.current = currentTime;
+    setIsPlaying(true);
+  };
+
+  const handleStop = (reset = false) => {
+    if (sourceNode.current) { try { sourceNode.current.stop(); } catch(e) {} sourceNode.current = null; }
+    if (reset) { setCurrentTime(0); offsetTimeRef.current = 0; } 
+    else { offsetTimeRef.current = currentTime; }
+    setIsPlaying(false);
+  };
+
+  const reverseBuffer = (buffer) => {
+    const out = audioCtx.current.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      const d = buffer.getChannelData(i), o = out.getChannelData(i);
+      for (let j = 0; j < buffer.length; j++) o[j] = d[buffer.length - 1 - j];
+    }
+    return out;
+  };
+
+  const createReverbBuffer = () => {
+    const len = audioCtx.current.sampleRate * 2;
+    const imp = audioCtx.current.createBuffer(2, len, audioCtx.current.sampleRate);
+    for (let i = 0; i < 2; i++) {
+      const c = imp.getChannelData(i);
+      for (let j = 0; j < len; j++) c[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / len, 2);
+    }
+    return imp;
+  };
+
+  const handleExport = async () => {
+    if (!audioBuffer) return;
+    handleStop();
+    const offlineCtx = new OfflineAudioContext(1, Math.floor(audioBuffer.sampleRate * duration), audioBuffer.sampleRate);
+    const oSource = offlineCtx.createBufferSource();
+    oSource.buffer = isReverse ? reverseBuffer(audioBuffer) : audioBuffer;
+    oSource.playbackRate.value = getInterpolatedValue('pitch', duration/2) * getInterpolatedValue('tempo', duration/2);
+    oSource.connect(offlineCtx.destination);
+    oSource.start();
+    const rendered = await offlineCtx.startRendering();
+    let blob = (format === 'mp3') ? await encodeMP3(rendered) : bufferToWavMono(rendered);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `screw_ease_export_${Date.now()}.${format}`;
+    a.click();
+  };
+
+  const encodeMP3 = async (ab) => {
+    const lame = window.lamejs;
+    const encoder = new lame.Mp3Encoder(1, ab.sampleRate, 128);
+    const mp3Data = [];
+    const samples = ab.getChannelData(0);
+    const i16 = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      let v = Math.max(-1, Math.min(1, samples[i]));
+      i16[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
+    }
+    const bSize = 1152;
+    for (let i = 0; i < i16.length; i += bSize) {
+      const chunk = encoder.encodeBuffer(i16.subarray(i, i + bSize));
+      if (chunk.length > 0) mp3Data.push(chunk);
+    }
+    const end = encoder.flush();
+    if (end.length > 0) mp3Data.push(end);
+    return new Blob(mp3Data, { type: 'audio/mp3' });
+  };
+
+  const bufferToWavMono = (ab) => {
+    const n = 1;
+    let len = ab.length * n * 2 + 44, b = new ArrayBuffer(len), v = new DataView(b), pos = 0;
+    const u32 = (d) => { v.setUint32(pos, d, true); pos += 4; };
+    const u16 = (d) => { v.setUint16(pos, d, true); pos += 2; };
+    u32(0x46464952); u32(len - 8); u32(0x45564157); u32(0x20746d66); u32(16); u16(1); u16(n);
+    u32(ab.sampleRate); u32(ab.sampleRate * 2 * n); u16(n * 2); u16(16); u32(0x61746164); u32(len - pos - 4);
+    const data = ab.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      let s = Math.max(-1, Math.min(1, data[i]));
+      v.setInt16(pos, (s < 0 ? s * 0x8000 : s * 0x7FFF), true); pos += 2;
+    }
+    return new Blob([b], {type: "audio/wav"});
+  };
+
+  // --- Graph Editor com Easing e Círculos Brancos ---
+  const GraphEditor = ({ paramKey, isLocked }) => {
+    const canvasRef = useRef(null);
+    const [draggingIdx, setDraggingIdx] = useState(null);
+    const p = params[paramKey];
+
+    const getMousePos = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clientX = (e.touches ? e.touches[0].clientX : e.clientX);
+      const clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+      return {
+        x: (clientX - rect.left) / rect.width,
+        y: 1 - (clientY - rect.top) / rect.height
+      };
+    };
+
+    const handleStart = (e) => {
+      if (!isLocked) return;
+      const pos = getMousePos(e);
+      const time = pos.x * duration;
+      const threshold = 0.05;
+      const foundIdx = p.keys.findIndex(k => 
+        Math.abs((k.t / duration) - pos.x) < threshold && 
+        Math.abs(k.v - pos.y) < threshold
+      );
+
+      if (foundIdx !== -1) {
+        setDraggingIdx(foundIdx);
+      } else {
+        const newKeys = [...p.keys, { t: time, v: pos.y, ease: 'linear' }].sort((a,b) => a.t - b.t);
+        const newIdx = newKeys.findIndex(k => k.t === time && k.v === pos.y);
+        setParams(prev => ({ ...prev, [paramKey]: { ...prev[paramKey], keys: newKeys } }));
+        setDraggingIdx(newIdx);
+      }
+    };
+
+    const handleMove = (e) => {
+      if (draggingIdx === null) return;
+      if (e.cancelable) e.preventDefault();
+      const pos = getMousePos(e);
+      const newT = Math.max(0, Math.min(duration, pos.x * duration));
+      const newV = Math.max(0, Math.min(1, pos.y));
+      setParams(prev => {
+        const newKeys = [...prev[paramKey].keys];
+        newKeys[draggingIdx] = { ...newKeys[draggingIdx], t: newT, v: newV };
+        return { ...prev, [paramKey]: { ...prev[paramKey], keys: newKeys } };
+      });
+    };
+
+    const handleEnd = () => {
+      if (draggingIdx !== null) {
+        setParams(prev => ({
+          ...prev,
+          [paramKey]: { ...prev[paramKey], keys: [...prev[paramKey].keys].sort((a,b) => a.t - b.t) }
+        }));
+      }
+      setDraggingIdx(null);
+    };
+
+    const updateKeyEase = (idx, newEase) => {
+      setParams(prev => {
+        const newKeys = [...prev[paramKey].keys];
+        newKeys[idx] = { ...newKeys[idx], ease: newEase };
+        return { ...prev, [paramKey]: { ...prev[paramKey], keys: newKeys } };
+      });
+    };
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if(!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const keys = [...p.keys].sort((a,b) => a.t - b.t);
+
+      // Desenhar Linhas com Easing
+      ctx.beginPath();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      keys.forEach((k, i) => {
+        const x = (k.t / duration) * canvas.width;
+        const y = (1 - k.v) * canvas.height;
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          const prev = keys[i-1];
+          const easingFn = EASING_FUNCTIONS[prev.ease || 'linear'];
+          const samples = 40;
+          for(let s = 1; s <= samples; s++) {
+            const t = s / samples;
+            const easedT = easingFn(t);
+            const interpT = prev.t + (k.t - prev.t) * t;
+            const interpV = prev.v + (k.v - prev.v) * easedT;
+            ctx.lineTo((interpT / duration) * canvas.width, (1 - interpV) * canvas.height);
+          }
+        }
+      });
+      ctx.stroke();
+
+      // Círculos Brancos
+      p.keys.forEach((k, i) => {
+        const x = (k.t / duration) * canvas.width;
+        const y = (1 - k.v) * canvas.height;
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = (i === draggingIdx) ? 15 : 5;
+        ctx.shadowColor = (i === draggingIdx) ? '#3b82f6' : 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.arc(x, y, (i === draggingIdx) ? 8 : 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
+
+      // Playhead
+      const px = (currentTime / duration) * canvas.width;
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+    }, [p.keys, currentTime, duration, draggingIdx]);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Activity size={14} className="text-blue-500" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">{paramKey} automation</span>
+          </div>
+          <span className="text-[9px] text-gray-500 font-bold uppercase tracking-tighter">Bloqueie para editar keyframes</span>
+        </div>
+        
+        <div className="relative">
+          <canvas 
+            ref={canvasRef} 
+            width={800} height={200} 
+            onMouseDown={handleStart} onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
+            onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd}
+            style={{ touchAction: isLocked ? 'none' : 'auto' }}
+            className={`w-full h-52 bg-gradient-to-b from-black/80 to-black/40 border border-white/5 rounded-3xl ${isLocked ? 'cursor-crosshair' : 'cursor-not-allowed opacity-60'}`}
+          />
         </div>
 
-        <div class="mb-8">
-            <input type="file" id="audioInput" accept="audio/*" class="hidden">
-            <button onclick="document.getElementById('audioInput').click()" class="w-full py-4 bg-white text-black rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-all active:scale-95">
-                Importar Áudio
+        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+          {p.keys.map((k, i) => (
+            <div key={i} className="flex-shrink-0 bg-white/5 p-3 rounded-2xl flex flex-col gap-2 border border-white/10 min-w-[120px]">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-mono font-bold text-blue-400">{k.t.toFixed(2)}s</span>
+                <button onClick={() => {
+                  if(p.keys.length > 1) setParams(prev => ({...prev, [paramKey]: {...prev[paramKey], keys: prev[paramKey].keys.filter((_, idx) => idx !== i)}}));
+                }} className="text-red-500 hover:scale-110 transition-transform"><Trash2 size={12}/></button>
+              </div>
+              
+              <select 
+                value={k.ease || 'linear'}
+                onChange={(e) => updateKeyEase(i, e.target.value)}
+                className="bg-black/50 text-[9px] font-black uppercase p-2 rounded-lg border border-white/5 outline-none text-white appearance-none text-center"
+              >
+                {Object.keys(EASING_FUNCTIONS).map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const SlideEditor = ({ paramKey }) => {
+    const p = params[paramKey];
+    return (
+      <div className="space-y-8 py-4">
+        <div className="flex justify-between items-end">
+          <div>
+            <span className="text-[10px] font-black uppercase text-blue-500 block mb-1">Manual {paramKey}</span>
+            <div className="text-2xl font-black italic">{p.val.toFixed(2)}</div>
+          </div>
+          <Zap size={24} className="text-yellow-500 animate-pulse" />
+        </div>
+        <div className="relative h-12 flex items-center">
+          <div className="absolute w-full h-1 bg-white/5 rounded-full" />
+          <div className="absolute h-1 bg-blue-600 rounded-full transition-all" style={{ width: `${((p.val - p.min) / (p.max - p.min)) * 100}%` }} />
+          <input 
+            type="range" min={p.min} max={p.max} step="0.01" value={p.val}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              setParams(prev => ({...prev, [paramKey]: {...prev[paramKey], val}}));
+            }}
+            className="absolute w-full opacity-0 cursor-pointer h-full z-10"
+          />
+          <div className="absolute w-6 h-6 bg-white border-4 border-blue-600 rounded-full shadow-lg pointer-events-none transition-all" style={{ left: `calc(${((p.val - p.min) / (p.max - p.min)) * 100}% - 12px)` }} />
+        </div>
+        <div className="grid grid-cols-5 gap-3">
+          {Object.keys(params).map(k => (
+            <div key={k} className={`p-2 rounded-xl transition-all ${k === paramKey ? 'bg-blue-600/20' : ''}`}>
+              <div className="h-20 bg-black/40 rounded-lg flex flex-col-reverse overflow-hidden border border-white/5">
+                <div className="bg-blue-600/60 w-full transition-all duration-500" style={{ height: `${((params[k].val - params[k].min) / (params[k].max - params[k].min)) * 100}%` }} />
+              </div>
+              <div className="text-[7px] uppercase text-gray-500 mt-2 font-bold truncate">{k}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-[#020202] text-white font-sans flex items-center justify-center p-2 md:p-6">
+      <div className="max-w-5xl w-full bg-[#080808] border border-white/5 rounded-[3.5rem] p-6 md:p-12 shadow-3xl relative overflow-hidden">
+        
+        {/* Background Decorative Blur */}
+        <div className="absolute -top-24 -left-24 w-64 h-64 bg-blue-600/10 rounded-full blur-[100px]" />
+        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-red-600/10 rounded-full blur-[100px]" />
+
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-8 mb-12 relative z-10">
+          <div>
+            <h1 className="text-4xl font-black italic tracking-tighter uppercase leading-none">Screw<span className="text-blue-600">Studio</span></h1>
+            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-[0.5em] mt-2">Motion Sound Engine</p>
+          </div>
+          
+          <div className="flex items-center gap-2 bg-black/60 p-2 rounded-[2rem] border border-white/10 backdrop-blur-md">
+            <button 
+              onClick={() => setControlMode('slide')}
+              className={`flex items-center gap-2 px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase transition-all duration-300 ${controlMode === 'slide' ? 'bg-white text-black shadow-xl scale-105' : 'text-gray-500 hover:text-white'}`}
+            >
+              <Sliders size={14}/>
+              <span>Slide</span>
             </button>
+            <button 
+              onClick={() => setControlMode('automate')}
+              className={`flex items-center gap-2 px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase transition-all duration-300 ${controlMode === 'automate' ? 'bg-blue-600 text-white shadow-xl scale-105' : 'text-gray-500 hover:text-white'}`}
+            >
+              <Activity size={14}/>
+              <span>Automate</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsLocked(!isLocked)}
+              className={`p-5 rounded-2xl transition-all shadow-lg active:scale-90 ${isLocked ? 'bg-blue-600 text-white shadow-blue-900/40' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}
+            >
+              {isLocked ? <Lock size={20}/> : <Unlock size={20}/>}
+            </button>
+          </div>
         </div>
 
-        <div id="mainUI" class="hidden space-y-8 opacity-0 transition-opacity duration-700">
-            <input type="range" id="progressSlider" class="w-full cursor-pointer" min="0" max="100" value="0" step="0.1">
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="space-y-6 bg-white/5 p-6 rounded-3xl">
-                    <h3 class="knob-label">Motor Principal</h3>
-                    <div class="space-y-4">
-                        <div class="flex justify-between"><span class="text-[10px] text-gray-400">PITCH</span><span id="pVal" class="text-blue-500 font-mono text-[10px]">1.00x</span></div>
-                        <input type="range" id="pSlider" class="w-full" min="0.1" max="3.0" step="0.01" value="1.0">
-                        <div class="flex justify-between"><span class="text-[10px] text-gray-400">TEMPO</span><span id="tVal" class="text-blue-500 font-mono text-[10px]">1.00x</span></div>
-                        <input type="range" id="tSlider" class="w-full" min="0.1" max="2.0" step="0.01" value="1.0">
-                        <button id="revBtn" class="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-[9px] font-black uppercase mt-2">Reverse: OFF</button>
-                    </div>
-                </div>
-
-                <div class="space-y-6 bg-white/5 p-6 rounded-3xl">
-                    <h3 class="knob-label">Rack de Efeitos</h3>
-                    <div class="space-y-4">
-                        <div class="space-y-1">
-                            <div class="flex justify-between"><span class="text-[10px] text-gray-400">FILTRO</span><span id="fVal" class="text-blue-500 font-mono text-[10px]">MAX</span></div>
-                            <input type="range" id="fSlider" class="w-full" min="200" max="20000" step="1" value="20000">
-                        </div>
-                        <div class="space-y-1">
-                            <div class="flex justify-between"><span class="text-[10px] text-gray-400">REVERB</span><span id="rVal" class="text-blue-500 font-mono text-[10px]">0%</span></div>
-                            <input type="range" id="rSlider" class="w-full" min="0" max="1" step="0.01" value="0">
-                        </div>
-                        <div class="space-y-1">
-                            <div class="flex justify-between"><span class="text-[10px] text-gray-400">CRUNCH</span><span id="dVal" class="text-blue-500 font-mono text-[10px]">0%</span></div>
-                            <input type="range" id="dSlider" class="w-full" min="0" max="50" step="1" value="0">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex flex-col md:flex-row gap-4">
-                <select id="format" class="bg-black border border-white/10 text-white px-6 py-4 rounded-2xl text-[10px] font-bold uppercase outline-none focus:border-blue-500">
-                    <option value="mp3">MP3 (Arquivo Leve - 128kbps)</option>
-                    <option value="wav">WAV (Compacto - 16-bit Mono)</option>
-                </select>
-                <button id="playBtn" class="flex-1 py-4 bg-gray-900 text-white rounded-2xl font-black text-[10px] uppercase hover:bg-gray-800 transition-all">Play / Pause</button>
-                <button id="exportBtn" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase hover:bg-blue-500 shadow-xl shadow-blue-900/40">Baixar (Otimizado)</button>
-            </div>
+        {!audioBuffer ? (
+          <div className="border-2 border-dashed border-white/10 rounded-[3rem] py-32 md:py-48 text-center bg-white/[0.01] hover:bg-white/[0.03] transition-all cursor-pointer group" onClick={() => document.getElementById('f').click()}>
+            <input type="file" onChange={handleFileUpload} className="hidden" id="f" />
+            <div className="bg-white text-black px-16 py-6 rounded-3xl font-black text-sm uppercase tracking-widest group-hover:scale-110 transition-transform inline-block shadow-2xl">Carregar Som</div>
+            <p className="mt-8 text-[10px] text-gray-600 font-bold uppercase tracking-[0.3em]">Arraste ou clique para começar</p>
+          </div>
+        ) : (
+          <div className="space-y-12 relative z-10">
             
-            <p id="statusMsg" class="text-[9px] text-center text-gray-600 font-bold uppercase tracking-widest hidden italic">Comprimindo áudio para reduzir tamanho...</p>
+            {/* Scrubber Principal */}
+            <div className="px-2">
+              <input 
+                type="range" className="w-full h-2 bg-white/5 rounded-full appearance-none cursor-pointer accent-blue-600"
+                min="0" max={duration} step="0.01" value={currentTime}
+                onChange={(e) => { setCurrentTime(parseFloat(e.target.value)); if(isPlaying) { handleStop(); handleStart(); } }}
+              />
+              <div className="flex justify-between mt-4 font-mono text-[10px] text-blue-500/60 font-black">
+                <span>{Math.floor(currentTime/60)}:{Math.floor(currentTime%60).toString().padStart(2,'0')}</span>
+                <span className="bg-white/5 px-4 py-1 rounded-full text-white">{((currentTime/duration)*100).toFixed(1)}%</span>
+                <span>{Math.floor(duration/60)}:{Math.floor(duration%60).toString().padStart(2,'0')}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+              {/* Menu Efeitos Lateral */}
+              <div className="lg:col-span-3 grid grid-cols-2 lg:grid-cols-1 gap-3">
+                {Object.keys(params).map(key => (
+                  <button 
+                    key={key} 
+                    className={`w-full text-left p-5 rounded-[2rem] border transition-all duration-300 ${activeParam === key ? 'bg-blue-600 text-white border-blue-400 translate-x-2' : 'bg-white/5 border-transparent hover:bg-white/10'}`} 
+                    onClick={() => setActiveParam(key)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black uppercase tracking-wider">{key}</span>
+                      <Key size={14} className={activeParam === key ? 'opacity-100' : 'opacity-20'} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Área Central de Edição */}
+              <div className="lg:col-span-9 bg-white/[0.03] p-6 md:p-10 rounded-[3rem] border border-white/5 backdrop-blur-sm min-h-[400px]">
+                 {controlMode === 'automate' ? (
+                   <GraphEditor paramKey={activeParam} isLocked={isLocked} />
+                 ) : (
+                   <SlideEditor paramKey={activeParam} />
+                 )}
+              </div>
+            </div>
+
+            {/* Controles de Playback e Exportação */}
+            <div className="flex flex-col md:flex-row gap-4 pt-10 border-t border-white/5">
+                <button 
+                  onClick={() => setIsReverse(!isReverse)}
+                  className={`px-10 py-6 rounded-[2rem] text-[10px] font-black uppercase transition-all active:scale-95 ${isReverse ? 'bg-red-600 text-white shadow-xl shadow-red-900/30' : 'bg-white/5 text-gray-500 hover:text-white'}`}
+                >
+                  Reverse {isReverse ? 'ON' : 'OFF'}
+                </button>
+                <button 
+                  onClick={isPlaying ? handleStop : handleStart}
+                  className="flex-1 bg-white text-black py-6 rounded-[2rem] flex items-center justify-center gap-4 hover:bg-gray-200 transition-all shadow-2xl active:scale-[0.98]"
+                >
+                  {isPlaying ? <Pause size={24} fill="black"/> : <Play size={24} fill="black"/>}
+                  <span className="text-xs font-black uppercase tracking-[0.2em]">{isPlaying ? 'Pausar Master' : 'Iniciar Playback'}</span>
+                </button>
+                <div className="flex gap-2">
+                  <select 
+                    value={format} onChange={(e) => setFormat(e.target.value)}
+                    className="bg-[#0f0f0f] border border-white/10 px-8 rounded-[2rem] text-[10px] font-black uppercase outline-none text-white appearance-none text-center cursor-pointer hover:border-blue-500 transition-colors"
+                  >
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV</option>
+                  </select>
+                  <button 
+                    onClick={handleExport}
+                    className="bg-blue-600 px-12 py-6 rounded-[2rem] flex items-center gap-3 hover:bg-blue-500 transition-all shadow-xl shadow-blue-900/40 text-white font-black uppercase text-[10px] tracking-widest active:scale-95"
+                  >
+                    <Download size={20}/>
+                    <span>Exportar</span>
+                  </button>
+                </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dica Flutuante */}
+      {isLocked && controlMode === 'automate' && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 bg-blue-600 px-8 py-3 rounded-full shadow-2xl animate-pulse text-[10px] font-black uppercase tracking-widest z-[100] flex items-center gap-3 border border-blue-400">
+          <div className="w-2 h-2 bg-white rounded-full animate-ping" />
+          Modo de Edição Ativo
         </div>
+      )}
     </div>
+  );
+};
 
-    <script>
-        let audioBuffer = null, audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        let sourceNode = null, filterNode, reverbNode, distortionNode, dryGain, wetGain;
-        let isPlaying = false, isReverse = false, startTime = 0, offsetTime = 0, aniFrame;
-
-        const input = document.getElementById('audioInput'), mainUI = document.getElementById('mainUI');
-        const playBtn = document.getElementById('playBtn'), exportBtn = document.getElementById('exportBtn'), revBtn = document.getElementById('revBtn');
-        const pS = document.getElementById('pSlider'), tS = document.getElementById('tSlider'), fS = document.getElementById('fSlider'), rS = document.getElementById('rSlider'), dS = document.getElementById('dSlider');
-        const pV = document.getElementById('pVal'), tV = document.getElementById('tVal'), fV = document.getElementById('fVal'), rV = document.getElementById('rVal'), dV = document.getElementById('dVal');
-        const progressSlider = document.getElementById('progressSlider'), timeDisplay = document.getElementById('timeDisplay'), statusMsg = document.getElementById('statusMsg');
-
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const ab = await file.arrayBuffer();
-            audioBuffer = await audioCtx.decodeAudioData(ab);
-            mainUI.classList.remove('hidden');
-            setTimeout(() => mainUI.classList.add('opacity-100'), 50);
-            updateUI();
-        };
-
-        const updateUI = () => {
-            pV.innerText = parseFloat(pS.value).toFixed(2) + "x";
-            tV.innerText = parseFloat(tS.value).toFixed(2) + "x";
-            fV.innerText = fS.value >= 19000 ? "MAX" : fS.value + "Hz";
-            rV.innerText = Math.round(rS.value * 100) + "%";
-            dV.innerText = Math.round(dS.value * 2) + "%";
-            const total = audioBuffer ? audioBuffer.duration : 0;
-            timeDisplay.innerText = `${fmt(offsetTime)} / ${fmt(total)}`;
-            progressSlider.max = total;
-            if(!isDragging) progressSlider.value = offsetTime;
-            if (isPlaying && sourceNode) {
-                sourceNode.playbackRate.value = pS.value * tS.value;
-                filterNode.frequency.setTargetAtTime(fS.value, audioCtx.currentTime, 0.05);
-                wetGain.gain.setTargetAtTime(rS.value, audioCtx.currentTime, 0.05);
-                dryGain.gain.setTargetAtTime(1 - rS.value * 0.5, audioCtx.currentTime, 0.05);
-                distortionNode.curve = makeDistortionCurve(dS.value);
-            }
-        };
-
-        [pS, tS, fS, rS, dS].forEach(s => s.oninput = updateUI);
-
-        function fmt(s) { return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`; }
-        function makeDistortionCurve(amount) {
-            const n = 44100, curve = new Float32Array(n), deg = Math.PI / 180;
-            for (let i = 0; i < n; ++i) { const x = (i * 2) / n - 1; curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x)); }
-            return curve;
-        }
-
-        let isDragging = false;
-        progressSlider.onmousedown = () => isDragging = true;
-        progressSlider.onmouseup = () => { isDragging = false; offsetTime = parseFloat(progressSlider.value); if (isPlaying) { stop(); start(); } };
-
-        revBtn.onclick = () => { isReverse = !isReverse; revBtn.innerText = `Reverse: ${isReverse ? 'ON' : 'OFF'}`; revBtn.classList.toggle('text-blue-500', isReverse); if (isPlaying) { stop(); start(); } };
-
-        playBtn.onclick = () => isPlaying ? stop() : start();
-
-        function start() {
-            if (!audioBuffer) return;
-            if(audioCtx.state === 'suspended') audioCtx.resume();
-            sourceNode = audioCtx.createBufferSource();
-            sourceNode.buffer = isReverse ? reverseBuffer(audioBuffer) : audioBuffer;
-            filterNode = audioCtx.createBiquadFilter(); filterNode.type = "lowpass"; filterNode.frequency.value = fS.value;
-            distortionNode = audioCtx.createWaveShaper(); distortionNode.curve = makeDistortionCurve(dS.value);
-            reverbNode = audioCtx.createConvolver(); reverbNode.buffer = createReverb();
-            dryGain = audioCtx.createGain(); wetGain = audioCtx.createGain();
-            dryGain.gain.value = 1 - rS.value * 0.5; wetGain.gain.value = rS.value;
-            sourceNode.connect(filterNode); filterNode.connect(distortionNode); distortionNode.connect(dryGain);
-            dryGain.connect(audioCtx.destination); distortionNode.connect(reverbNode); reverbNode.connect(wetGain);
-            wetGain.connect(audioCtx.destination);
-            sourceNode.playbackRate.value = pS.value * tS.value;
-            let playAt = isReverse ? audioBuffer.duration - offsetTime : offsetTime;
-            sourceNode.start(0, Math.max(0, playAt));
-            startTime = audioCtx.currentTime;
-            isPlaying = true;
-            playBtn.innerText = "Parar";
-            animate();
-        }
-
-        function stop() {
-            if (sourceNode) {
-                const elapsed = (audioCtx.currentTime - startTime) * (pS.value * tS.value);
-                offsetTime += elapsed;
-                sourceNode.stop();
-                sourceNode = null;
-            }
-            cancelAnimationFrame(aniFrame);
-            isPlaying = false;
-            playBtn.innerText = "Reproduzir";
-        }
-
-        function animate() {
-            if (!isPlaying) return;
-            const rate = pS.value * tS.value;
-            const current = offsetTime + (audioCtx.currentTime - startTime) * rate;
-            if (current >= audioBuffer.duration) { offsetTime = 0; stop(); updateUI(); return; }
-            if (!isDragging) { progressSlider.value = current; timeDisplay.innerText = `${fmt(current)} / ${fmt(audioBuffer.duration)}`; }
-            aniFrame = requestAnimationFrame(animate);
-        }
-
-        function reverseBuffer(buffer) {
-            const out = audioCtx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-            for (let i = 0; i < buffer.numberOfChannels; i++) {
-                const d = buffer.getChannelData(i), o = out.getChannelData(i);
-                for (let j = 0; j < buffer.length; j++) o[j] = d[buffer.length - 1 - j];
-            }
-            return out;
-        }
-
-        function createReverb() {
-            const len = audioCtx.sampleRate * 2, imp = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
-            for (let i = 0; i < 2; i++) { const c = imp.getChannelData(i); for (let j = 0; j < len; j++) c[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / len, 2); }
-            return imp;
-        }
-
-        // EXPORTAÇÃO COM REDUÇÃO DE TAMANHO
-        exportBtn.onclick = async () => {
-            if (!audioBuffer) return;
-            statusMsg.classList.remove('hidden');
-            exportBtn.disabled = true;
-
-            const rate = pS.value * tS.value;
-            const format = document.getElementById('format').value;
-            const duration = audioBuffer.duration / rate;
-            
-            // Forçamos 1 canal (Mono) para reduzir o tamanho pela metade
-            const offlineCtx = new OfflineAudioContext(1, Math.floor(audioBuffer.sampleRate * duration), audioBuffer.sampleRate);
-
-            const oSource = offlineCtx.createBufferSource();
-            oSource.buffer = isReverse ? reverseBuffer(audioBuffer) : audioBuffer;
-            oSource.playbackRate.value = rate;
-
-            const oFilter = offlineCtx.createBiquadFilter(); oFilter.type = "lowpass"; oFilter.frequency.value = fS.value;
-            const oDist = offlineCtx.createWaveShaper(); oDist.curve = makeDistortionCurve(dS.value);
-            const oRev = offlineCtx.createConvolver(); oRev.buffer = createReverb();
-            const oDry = offlineCtx.createGain(); const oWet = offlineCtx.createGain();
-            oDry.gain.value = 1 - rS.value * 0.5; oWet.gain.value = rS.value;
-
-            oSource.connect(oFilter); oFilter.connect(oDist); oDist.connect(oDry); oDry.connect(offlineCtx.destination);
-            oDist.connect(oRev); oRev.connect(oWet); oWet.connect(offlineCtx.destination);
-            oSource.start();
-
-            try {
-                const rendered = await offlineCtx.startRendering();
-                let blob;
-                if (format === 'mp3') {
-                    // MP3 a 128kbps Mono é extremamente pequeno
-                    blob = await encodeMP3(rendered, 128);
-                } else {
-                    // WAV Mono 16-bit
-                    blob = bufferToWavMono(rendered);
-                }
-
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `screw_mini_${Date.now()}.${format}`;
-                a.click();
-                
-                setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-
-            } catch (err) {
-                console.error("Erro na exportação:", err);
-            } finally {
-                statusMsg.classList.add('hidden');
-                exportBtn.disabled = false;
-            }
-        };
-
-        async function encodeMP3(ab, bitrate) {
-            return new Promise(res => {
-                // Encode em Mono (1 canal) para diminuir tamanho
-                const mp3encoder = new lamejs.Mp3Encoder(1, ab.sampleRate, bitrate);
-                const mp3Data = [];
-                const samples = ab.getChannelData(0);
-                
-                const conv = (s) => {
-                    const i16 = new Int16Array(s.length);
-                    for (let i = 0; i < s.length; i++) {
-                        let v = Math.max(-1, Math.min(1, s[i]));
-                        i16[i] = v < 0 ? v * 0x8000 : v * 0x7FFF;
-                    }
-                    return i16;
-                };
-                
-                const data = conv(samples), b = 1152;
-                for (let i = 0; i < data.length; i += b) {
-                    const buf = mp3encoder.encodeBuffer(data.subarray(i, i + b));
-                    if (buf.length > 0) mp3Data.push(buf);
-                }
-                const end = mp3encoder.flush();
-                if (end.length > 0) mp3Data.push(end);
-                res(new Blob(mp3Data, { type: 'audio/mp3' }));
-            });
-        }
-
-        function bufferToWavMono(ab) {
-            // WAV Mono 16-bit (Redução drástica comparado ao estéreo 32-bit padrão)
-            const n = 1; // Mono
-            let len = ab.length * n * 2 + 44, b = new ArrayBuffer(len), v = new DataView(b), pos = 0;
-            const u16 = (d) => { v.setUint16(pos, d, true); pos += 2; };
-            const u32 = (d) => { v.setUint32(pos, d, true); pos += 4; };
-            
-            u32(0x46464952); u32(len - 8); u32(0x45564157); u32(0x20746d66); u32(16); u16(1); u16(n);
-            u32(ab.sampleRate); u32(ab.sampleRate * 2 * n); u16(n * 2); u16(16); u32(0x61746164); u32(len - pos - 4);
-            
-            const data = ab.getChannelData(0);
-            for (let i = 0; i < data.length; i++) {
-                let s = Math.max(-1, Math.min(1, data[i]));
-                v.setInt16(pos, (s < 0 ? s * 0x8000 : s * 0x7FFF), true); pos += 2;
-            }
-            return new Blob([b], {type: "audio/wav"});
-        }
-    </script>
-</body>
-</html>
+export default App;
 
