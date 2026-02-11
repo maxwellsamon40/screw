@@ -1,374 +1,79 @@
 <!DOCTYPE html>
-<html lang="pt-pt">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ScrewStudio - Professional Audio Suite</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acessar Compartilhamento Gemini</title>
     <style>
-        :root { --accent: #3b82f6; --card: rgba(255,255,255,0.05); }
-        body { 
-            font-family: 'Inter', sans-serif; 
-            margin: 0; 
-            overflow-x: hidden; 
-            background-color: #030303; 
-            color: white;
-            transition: background-color 0.5s ease, color 0.5s ease;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        
-        /* Themes */
-        .theme-dark { background-color: #030303; color: white; --accent: #3b82f6; --card: rgba(255,255,255,0.05); }
-        .theme-white { background-color: #ffffff; color: #111; --accent: #3b82f6; --card: rgba(0,0,0,0.05); }
-        .theme-blue { background-color: #0a192f; color: #64ffda; --accent: #64ffda; --card: rgba(100,255,218,0.1); }
-        .theme-pink { background-color: #fff1f2; color: #be185d; --accent: #ec4899; --card: rgba(236,72,153,0.1); }
-        .theme-purple { background-color: #1e1b4b; color: #e879f9; --accent: #a855f7; --card: rgba(168,85,247,0.1); }
-        .theme-colorful { background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff); background-attachment: fixed; color: white; --accent: #ffffff; --card: rgba(255,255,255,0.2); }
 
-        input[type="range"] { -webkit-appearance: none; background: transparent; width: 100%; }
-        input[type="range"]::-webkit-slider-thumb { 
-            -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; 
-            background: var(--accent); cursor: pointer; border: 3px solid rgba(0,0,0,0.1); margin-top: -7px;
+        body {
+            font-family: 'Google Sans', Arial, sans-serif;
+            background-color: #f8f9fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
-        input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: rgba(128,128,128,0.2); border-radius: 2px; }
-        
-        .folder-transition { 
-            transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-            max-height: 0;
-            opacity: 0;
-            overflow: hidden;
+
+        .container {
+            text-align: center;
+            background: white;
+            padding: 2rem;
+            border-radius: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            max-width: 400px;
+            width: 90%;
         }
-        .folder-open { max-height: 600px; opacity: 1; }
-        
-        /* Loader Styles */
-        #app-loader {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #030303; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            z-index: 9999; transition: opacity 0.4s ease, visibility 0.4s;
+
+        .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
         }
-        #loader-bar-container {
-            width: 200px; height: 2px; background: rgba(255,255,255,0.1);
-            margin-top: 20px; border-radius: 4px; overflow: hidden;
+
+        h1 {
+            color: #1f1f1f;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
         }
-        #loader-progress {
-            width: 0%; height: 100%; background: #3b82f6;
-            transition: width 0.3s ease-out;
+
+        p {
+            color: #444746;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+
+        .btn-gemini {
+            display: inline-block;
+            background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570);
+            color: white;
+            text-decoration: none;
+            padding: 12px 32px;
+            border-radius: 100px;
+            font-weight: 500;
+            transition: opacity 0.3s ease;
+        }
+
+        .btn-gemini:hover {
+            opacity: 0.9;
         }
     </style>
 </head>
-<body class="theme-dark">
-    <div id="app-loader">
-        <div class="text-center">
-            <h1 class="text-3xl font-black italic tracking-tighter">SCREWSTUDIO</h1>
-            <p id="loader-status" class="text-[8px] font-black opacity-40 uppercase tracking-[0.3em] mt-2">Iniciando Engine...</p>
-        </div>
-        <div id="loader-bar-container">
-            <div id="loader-progress"></div>
-        </div>
+<body>
+
+    <div class="container">
+        <div class="icon">✨</div>
+        <h1>Nova Conversa</h1>
+        <p>Clique no botão abaixo para visualizar o conteúdo compartilhado do Gemini.</p>
+        
+        <a href="https://gemini.google.com/share/cf17396a3a5b" target="_blank" class="btn-gemini">
+            Ver Conversa no Gemini
+        </a>
     </div>
 
-    <div id="root"></div>
-
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-    <script>
-        // Lógica do Loader de Recursos
-        (function() {
-            const loader = document.getElementById('app-loader');
-            const progress = document.getElementById('loader-progress');
-            const statusText = document.getElementById('loader-status');
-            let percentage = 0;
-            
-            // Incremento simulado da barra
-            const interval = setInterval(() => {
-                percentage += Math.random() * 15;
-                if (percentage >= 100) {
-                    percentage = 100;
-                    clearInterval(interval);
-                    finishLoading();
-                }
-                progress.style.width = percentage + '%';
-                if (percentage > 40) statusText.innerText = 'Carregando Módulos...';
-                if (percentage > 80) statusText.innerText = 'Finalizando UI...';
-            }, 100);
-
-            // Abre instantaneamente se demorar mais de 3 segundos
-            const failSafe = setTimeout(() => {
-                clearInterval(interval);
-                finishLoading();
-            }, 3000);
-
-            function finishLoading() {
-                clearTimeout(failSafe);
-                progress.style.width = '100%';
-                loader.style.opacity = '0';
-                loader.style.visibility = 'hidden';
-                setTimeout(() => loader.remove(), 400);
-            }
-        })();
-
-        const { useState, useEffect, useRef, useCallback, useMemo } = React;
-        const e = React.createElement;
-
-        const EASING = {
-            linear: t => t,
-            easeIn: t => t * t,
-            easeOut: t => t * (2 - t),
-            easeInOut: t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
-        };
-
-        const THEMES = [
-            { id: 'dark', label: 'Escuro', class: 'theme-dark' },
-            { id: 'white', label: 'Branco', class: 'theme-white' },
-            { id: 'blue', label: 'Azul', class: 'theme-blue' },
-            { id: 'pink', label: 'Rosa', class: 'theme-pink' },
-            { id: 'purple', label: 'Roxo', class: 'theme-purple' },
-            { id: 'colorful', label: 'Colorido', class: 'theme-colorful' }
-        ];
-
-        function App() {
-            const [currentTheme, setCurrentTheme] = useState('dark');
-            const [audioBuffer, setAudioBuffer] = useState(null);
-            const [isPlaying, setIsPlaying] = useState(false);
-            const [currentTime, setCurrentTime] = useState(0);
-            const [duration, setDuration] = useState(0);
-            const [activeParam, setActiveParam] = useState('pitch');
-            const [isFolderOpen, setIsFolderOpen] = useState(false);
-            const [isExporting, setIsExporting] = useState(false);
-            const [isReverse, setIsReverse] = useState(false);
-            
-            const [params, setParams] = useState({
-                pitch: { name: 'Pitch Shift', val: 1.0, min: 0.1, max: 2.0, keys: [{ t: 0, v: 0.45, ease: 'linear' }], mode: 'automate' },
-                tempo: { name: 'Time Stretch', val: 1.0, min: 0.1, max: 2.0, keys: [{ t: 0, v: 0.5, ease: 'linear' }], mode: 'automate' },
-                crunch: { name: 'Crunch (Distortion)', val: 0, min: 0, max: 100, keys: [{ t: 0, v: 0, ease: 'linear' }], mode: 'automate' },
-                lowpass: { name: 'Lowpass Filter', val: 20000, min: 20, max: 20000, keys: [{ t: 0, v: 1, ease: 'linear' }], mode: 'automate' },
-                highpass: { name: 'Highpass Filter', val: 20, min: 20, max: 5000, keys: [{ t: 0, v: 0, ease: 'linear' }], mode: 'automate' },
-                res: { name: 'Peak Reso', val: 1, min: 0.1, max: 20, keys: [{ t: 0, v: 0.05, ease: 'linear' }], mode: 'automate' },
-                bitcrush: { name: 'Bitcrusher', val: 16, min: 1, max: 16, keys: [{ t: 0, v: 1, ease: 'linear' }], mode: 'slide' },
-                gain: { name: 'Master Out', val: 0.8, min: 0, max: 2.0, keys: [{ t: 0, v: 0.4, ease: 'linear' }], mode: 'slide' },
-            });
-
-            const audioCtx = useRef(null);
-            const nodes = useRef({});
-            const startTimeRef = useRef(0);
-            const offsetTimeRef = useRef(0);
-            const requestRef = useRef();
-
-            useEffect(() => {
-                document.body.className = THEMES.find(t => t.id === currentTheme).class;
-            }, [currentTheme]);
-
-            const getValAtTime = useCallback((key, time) => {
-                const p = params[key];
-                if (p.mode === 'slide') return p.val;
-                const ks = [...p.keys].sort((a,b) => a.t - b.t);
-                if (ks.length === 0) return p.min;
-                if (time <= ks[0].t) return ks[0].v * (p.max - p.min) + p.min;
-                if (time >= ks[ks.length-1].t) return ks[ks.length-1].v * (p.max - p.min) + p.min;
-                for (let i=0; i<ks.length-1; i++) {
-                    const s = ks[i], e = ks[i+1];
-                    if (time >= s.t && time <= e.t) {
-                        const t = (time - s.t) / (e.t - s.t || 0.001);
-                        return (s.v + (e.v - s.v) * EASING[s.ease || 'linear'](t)) * (p.max - p.min) + p.min;
-                    }
-                }
-                return p.val;
-            }, [params]);
-
-            const makeCrunchCurve = (amount) => {
-                const k = amount;
-                const n_samples = 44100;
-                const curve = new Float32Array(n_samples);
-                const deg = Math.PI / 180;
-                for (let i = 0; i < n_samples; ++i) {
-                    const x = (i * 2) / n_samples - 1;
-                    curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
-                }
-                return curve;
-            };
-
-            const setupChain = (ctx, buffer) => {
-                const source = ctx.createBufferSource();
-                source.buffer = buffer;
-                const crunchNode = ctx.createWaveShaper();
-                crunchNode.curve = makeCrunchCurve(0);
-                crunchNode.oversample = '4x';
-                const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-                const hp = ctx.createBiquadFilter(); hp.type = 'highpass';
-                const master = ctx.createGain();
-                source.connect(crunchNode);
-                crunchNode.connect(lp);
-                lp.connect(hp);
-                hp.connect(master);
-                master.connect(ctx.destination);
-                return { source, crunchNode, lp, hp, master };
-            };
-
-            const stopAudio = (reset=false) => {
-                if (nodes.current.source) { try { nodes.current.source.stop(); } catch(err){} }
-                setIsPlaying(false);
-                if (reset) setCurrentTime(0);
-            };
-
-            const startAudio = () => {
-                if (!audioBuffer) return;
-                audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
-                let activeBuffer = audioBuffer;
-                if (isReverse) {
-                    activeBuffer = audioCtx.current.createBuffer(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
-                    for (let i=0; i<audioBuffer.numberOfChannels; i++) activeBuffer.getChannelData(i).set([...audioBuffer.getChannelData(i)].reverse());
-                }
-                nodes.current = setupChain(audioCtx.current, activeBuffer);
-                nodes.current.source.start(0, currentTime);
-                startTimeRef.current = audioCtx.current.currentTime;
-                offsetTimeRef.current = currentTime;
-                setIsPlaying(true);
-            };
-
-            const animate = () => {
-                if (!isPlaying) return;
-                const now = audioCtx.current.currentTime;
-                const p = getValAtTime('pitch', currentTime);
-                const t = getValAtTime('tempo', currentTime);
-                const newTime = offsetTimeRef.current + (now - startTimeRef.current) * (p * t);
-                
-                if (newTime >= duration) { stopAudio(true); return; }
-                setCurrentTime(newTime);
-                
-                const n = nodes.current;
-                if (n.source) n.source.playbackRate.setTargetAtTime(p * t, now, 0.05);
-                if (n.crunchNode) n.crunchNode.curve = makeCrunchCurve(getValAtTime('crunch', newTime));
-                if (n.lp) { n.lp.frequency.setTargetAtTime(getValAtTime('lowpass', newTime), now, 0.05); n.lp.Q.setTargetAtTime(getValAtTime('res', newTime), now, 0.05); }
-                if (n.hp) n.hp.frequency.setTargetAtTime(getValAtTime('highpass', newTime), now, 0.05);
-                if (n.master) n.master.gain.setTargetAtTime(getValAtTime('gain', newTime), now, 0.05);
-                
-                requestRef.current = requestAnimationFrame(animate);
-            };
-
-            useEffect(() => {
-                if (isPlaying) requestRef.current = requestAnimationFrame(animate);
-                return () => cancelAnimationFrame(requestRef.current);
-            }, [isPlaying, currentTime]);
-
-            const removeKeyframeAt = (key, index) => {
-                setParams(prev => ({
-                    ...prev,
-                    [key]: { ...prev[key], keys: prev[key].keys.filter((_, i) => i !== index) }
-                }));
-            };
-
-            const exportAudio = async () => {
-                if (!audioBuffer) return;
-                setIsExporting(true);
-                const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
-                let sourceBuffer = audioBuffer;
-                if (isReverse) {
-                    sourceBuffer = offlineCtx.createBuffer(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
-                    for (let i=0; i<audioBuffer.numberOfChannels; i++) sourceBuffer.getChannelData(i).set([...audioBuffer.getChannelData(i)].reverse());
-                }
-                const source = offlineCtx.createBufferSource();
-                source.buffer = sourceBuffer;
-                const crunchNode = offlineCtx.createWaveShaper();
-                const lp = offlineCtx.createBiquadFilter(); lp.type = 'lowpass';
-                const hp = offlineCtx.createBiquadFilter(); hp.type = 'highpass';
-                const master = offlineCtx.createGain();
-                source.connect(crunchNode); crunchNode.connect(lp); lp.connect(hp); hp.connect(master); master.connect(offlineCtx.destination);
-
-                const step = 0.05;
-                for (let t = 0; t < duration; t += step) {
-                    const pVal = getValAtTime('pitch', t);
-                    const tVal = getValAtTime('tempo', t);
-                    source.playbackRate.setValueAtTime(pVal * tVal, t);
-                    lp.frequency.setValueAtTime(getValAtTime('lowpass', t), t);
-                    lp.Q.setValueAtTime(getValAtTime('res', t), t);
-                    hp.frequency.setValueAtTime(getValAtTime('highpass', t), t);
-                    master.gain.setValueAtTime(getValAtTime('gain', t), t);
-                }
-                source.start(0);
-                const renderedBuffer = await offlineCtx.startRendering();
-                const wavBlob = bufferToWav(renderedBuffer);
-                const url = URL.createObjectURL(wavBlob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `ScrewStudio_Master_${Date.now()}.wav`;
-                link.click();
-                setIsExporting(false);
-            };
-
-            const bufferToWav = (abuffer) => {
-                const numOfChan = abuffer.numberOfChannels,
-                      length = abuffer.length * numOfChan * 2 + 44,
-                      buffer = new ArrayBuffer(length),
-                      view = new DataView(buffer),
-                      channels = [];
-                let i, sample, offset = 0, pos = 0;
-                const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2; };
-                const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4; };
-                setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
-                setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
-                setUint32(abuffer.sampleRate); setUint32(abuffer.sampleRate * 2 * numOfChan);
-                setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-                for (i = 0; i < numOfChan; i++) channels.push(abuffer.getChannelData(i));
-                while (pos < length) {
-                    for (i = 0; i < numOfChan; i++) {
-                        sample = Math.max(-1, Math.min(1, channels[i][offset]));
-                        sample = (sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
-                        view.setInt16(pos, sample, true); pos += 2;
-                    }
-                    offset++;
-                }
-                return new Blob([buffer], { type: "audio/wav" });
-            };
-
-            const Graph = ({ paramKey }) => {
-                const canvasRef = useRef(null);
-                const p = params[paramKey];
-                const isManual = p.mode === 'slide';
-                useEffect(() => {
-                    const ctx = canvasRef.current.getContext('2d');
-                    const w = canvasRef.current.width; const h = canvasRef.current.height;
-                    ctx.clearRect(0, 0, w, h);
-                    ctx.strokeStyle = 'rgba(128,128,128,0.1)'; ctx.lineWidth = 1;
-                    for(let i=0; i<=10; i++) { 
-                        ctx.beginPath(); ctx.moveTo(i * (w/10), 0); ctx.lineTo(i * (w/10), h); ctx.stroke(); 
-                        ctx.beginPath(); ctx.moveTo(0, i * (h/10)); ctx.lineTo(w, i * (h/10)); ctx.stroke();
-                    }
-                    if(!isManual && p.keys.length > 0) {
-                        ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--accent'); 
-                        ctx.lineWidth = 3; ctx.beginPath();
-                        const ks = [...p.keys].sort((a,b) => a.t - b.t);
-                        for (let t_px = 0; t_px <= w; t_px++) {
-                            const time = (t_px / w) * duration;
-                            let val = 0;
-                            if (time <= ks[0].t) val = ks[0].v;
-                            else if (time >= ks[ks.length-1].t) val = ks[ks.length-1].v;
-                            else {
-                                for (let i=0; i<ks.length-1; i++) {
-                                    const s = ks[i], e = ks[i+1];
-                                    if (time >= s.t && time <= e.t) {
-                                        const t_interp = (time - s.t) / (e.t - s.t || 0.001);
-                                        val = s.v + (e.v - s.v) * EASING[s.ease || 'linear'](t_interp);
-                                        break;
-                                    }
-                                }
-                            }
-                            const y_px = (1 - val) * h;
-                            if (t_px === 0) ctx.moveTo(t_px, y_px); else ctx.lineTo(t_px, y_px);
-                        }
-                        ctx.stroke();
-                        ks.forEach((k) => { 
-                            const x = (k.t/duration)*w; const y = (1-k.v)*h;
-                            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill();
-                            ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
-                        });
-                    }
-                    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
-                    ctx.beginPath(); ctx.moveTo((currentTime/duration)*w, 0); ctx.lineTo((currentTime/duration)*w, h); ctx.stroke();
-                }, [p.keys, currentTime, isManual, duration]);
-
-                return e('div', { className: "bg-[var(--card)] backdrop-blur-sm rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl" },
-                    e('div', { className: "p-5 flex justify-between items-center border-b border-white/5" },
-                        e('div', { className: "flex flex-col" },
-                   
+</body>
+</html>
