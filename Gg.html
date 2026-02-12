@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Screw Ultimate - 100+ FX Workspace</title>
+    <title>ScrewStudio</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
@@ -12,6 +12,7 @@
             --text: #e2e8f0;
             --accent: #6366f1;
             --border: rgba(255,255,255,0.1);
+            --ui-zoom: 1;
         }
 
         body { 
@@ -26,6 +27,16 @@
             position: relative;
             touch-action: none;
             font-family: 'Inter', sans-serif;
+            transition: background-color 0.4s ease;
+        }
+
+        #ui-wrapper {
+            transform: scale(var(--ui-zoom));
+            transform-origin: top left;
+            width: calc(100% / var(--ui-zoom));
+            height: calc(100% / var(--ui-zoom));
+            position: absolute;
+            top: 0; left: 0;
         }
 
         .floating-panel {
@@ -42,439 +53,489 @@
         }
 
         .panel-header {
-            padding: 12px;
+            padding: 10px;
             background: rgba(255,255,255,0.05);
-            cursor: move;
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border);
             user-select: none;
+            cursor: move;
+            touch-action: none;
         }
 
         .panel-content { padding: 15px; flex-grow: 1; overflow-y: auto; scrollbar-width: thin; }
-        .panel-content::-webkit-scrollbar { width: 4px; }
-        .panel-content::-webkit-scrollbar-thumb { background: var(--accent); }
+        .minimized .panel-content { display: none; }
+        .minimized { height: auto !important; }
+
+        .btn-icon {
+            width: 26px; height: 26px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.08);
+            border-radius: 6px; font-size: 14px;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+        .btn-icon:hover { background: var(--accent); }
 
         .resize-handle {
-            position: absolute;
-            right: 0; bottom: 0; width: 15px; height: 15px;
-            cursor: nwse-resize;
-            background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+            position: absolute; right: 0; bottom: 0; width: 15px; height: 15px;
+            cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
         }
 
-        .fullscreen { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 2000 !important; border-radius: 0 !important; }
+        .fullscreen { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 9999 !important; border-radius: 0 !important; }
 
-        input[type=range] { 
-            accent-color: var(--accent); 
-            width: 100%; 
-            height: 4px; 
-            border-radius: 2px;
-            background: rgba(255,255,255,0.1);
-        }
+        input[type=range] { accent-color: var(--accent); }
 
         .fx-card {
-            background: rgba(0,0,0,0.2);
-            padding: 8px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            border: 1px solid transparent;
-            transition: border 0.2s;
-        }
-        .fx-card:hover { border-color: var(--accent); }
-
-        .btn-main { background: var(--accent); color: white; padding: 10px; border-radius: 8px; font-weight: bold; transition: opacity 0.2s; }
-        .btn-main:disabled { opacity: 0.3; cursor: not-allowed; }
-
-        #reset-all {
-            position: fixed; bottom: 20px; right: 20px; z-index: 5000;
-            background: #f43f5e; color: white; width: 55px; height: 55px; border-radius: 50%;
-            font-size: 24px; display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 10px 20px rgba(244, 63, 94, 0.4);
+            background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; margin-bottom: 6px;
+            border: 1px solid var(--border);
         }
 
-        .theme-light { --bg: #f8fafc; --card: rgba(255,255,255,0.9); --text: #0f172a; --accent: #2563eb; }
-        .reaction-pop { position: absolute; font-size: 3.5rem; animation: popUp 1.2s forwards; pointer-events: none; z-index: 3000; }
-        @keyframes popUp { 0% { transform: translate(0, 0) scale(0.5); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(var(--tx), -150px) scale(1.5); opacity: 0; } }
+        .category-tab {
+            padding: 4px 10px; font-size: 10px; background: rgba(255,255,255,0.05);
+            border-radius: 6px; cursor: pointer; white-space: nowrap;
+        }
+        .category-tab.active { background: var(--accent); color: white; }
+
+        #zoom-ctrl {
+            position: fixed; bottom: 20px; left: 20px; z-index: 10000;
+            background: var(--card); padding: 10px; border-radius: 20px;
+            border: 1px solid var(--border); display: flex; align-items: center; gap: 10px;
+        }
+
+        video { width: 100%; height: 100%; object-fit: contain; background: black; }
+        
+        .rename-input {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--accent);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            outline: none;
+            width: 150px;
+        }
+
+        /* Studio Dynamic Color */
+        .studio-text {
+            color: var(--accent);
+            transition: color 0.4s ease;
+        }
     </style>
 </head>
 <body id="mainBody">
 
+<div id="ui-wrapper">
     <!-- TOP CONTROL -->
     <div class="fixed top-4 left-0 w-full flex flex-col items-center gap-2 z-[1000] pointer-events-none">
-        <div class="flex gap-2 pointer-events-auto bg-black/60 p-2 rounded-2xl backdrop-blur-xl border border-white/10">
-            <select id="themeSelector" class="bg-zinc-800 text-white text-[10px] rounded-lg p-2 outline-none border-none"></select>
-            <button onclick="document.getElementById('customSettings').classList.toggle('hidden')" class="bg-zinc-700 text-white text-[10px] px-3 rounded-lg">Customizar Visual</button>
+        <div class="flex gap-3 pointer-events-auto bg-black/60 p-2 px-4 rounded-2xl backdrop-blur-xl border border-white/10 items-center">
+            <!-- ScrewStudio Brand -->
+            <div class="text-[11px] font-black tracking-tighter uppercase select-none">
+                Screw<span class="studio-text">Studio</span>
+            </div>
+            
+            <div class="w-[1px] h-4 bg-white/10"></div>
+
+            <select id="themeSelector" class="bg-zinc-800 text-white text-[10px] rounded-lg p-2 outline-none border-none max-w-[150px]"></select>
+            <button onclick="document.getElementById('customSettings').classList.toggle('hidden')" class="bg-zinc-700 text-white text-[10px] px-3 rounded-lg h-8">Estilo</button>
+            <button onclick="toggleRenameUI()" class="bg-zinc-700 text-white text-[10px] px-3 rounded-lg h-8">Renomear Arquivo</button>
+            <div id="renameContainer" class="hidden flex items-center gap-2 px-2 bg-black/40 rounded-lg h-8">
+                <input type="text" id="globalFileName" value="meu_remix" class="rename-input">
+                <button onclick="toggleRenameUI()" class="text-[10px] text-green-400">Ok</button>
+            </div>
         </div>
 
         <div id="customSettings" class="hidden pointer-events-auto bg-black/90 p-5 rounded-2xl flex flex-wrap gap-5 border border-white/10 shadow-2xl">
-            <div class="flex flex-col items-center"><label class="text-[10px] mb-2">Fundo</label><input type="color" id="cBg" value="#0a0a0c"></div>
-            <div class="flex flex-col items-center"><label class="text-[10px] mb-2">Painel</label><input type="color" id="cCard" value="#141419"></div>
-            <div class="flex flex-col items-center"><label class="text-[10px] mb-2">Texto</label><input type="color" id="cText" value="#e2e8f0"></div>
-            <div class="flex flex-col items-center"><label class="text-[10px] mb-2">Destaque</label><input type="color" id="cAccent" value="#6366f1"></div>
-            <div class="flex flex-col items-center"><label class="text-[10px] mb-2">Imagem Fundo</label><input type="file" id="cImg" accept="image/*" class="w-32 text-[10px]"></div>
+            <div class="flex flex-col items-center"><label class="text-[10px] mb-2 text-white">Fundo</label><input type="color" id="cBg" value="#0a0a0c"></div>
+            <div class="flex flex-col items-center"><label class="text-[10px] mb-2 text-white">Painel</label><input type="color" id="cCard" value="#141419"></div>
+            <div class="flex flex-col items-center"><label class="text-[10px] mb-2 text-white">Texto</label><input type="color" id="cText" value="#e2e8f0"></div>
+            <div class="flex flex-col items-center"><label class="text-[10px] mb-2 text-white">Destaque</label><input type="color" id="cAccent" value="#6366f1"></div>
+            <div class="flex flex-col items-center"><label class="text-[10px] mb-2 text-white">Imagem Fundo</label><input type="file" id="cImg" accept="image/*" class="w-32 text-[10px]"></div>
         </div>
     </div>
 
-    <!-- MAIN PLAYER -->
-    <div id="playerPanel" class="floating-panel" style="top: 100px; left: 20px; width: 360px;">
+    <!-- VIDEO PANEL -->
+    <div id="videoPanel" class="floating-panel hidden" style="top: 100px; left: 400px; width: 640px; height: 320px;" onmousedown="focusPanel('videoPanel')" ontouchstart="focusPanel('videoPanel')">
         <div class="panel-header">
-            <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                <span class="text-[11px] font-black tracking-widest uppercase">Screw Player</span>
+            <div class="flex items-center gap-2 pointer-events-none">
+                <span class="btn-icon">✥</span>
+                <span class="text-[10px] font-bold uppercase" id="fileNameDisp">Comparação de Vídeo</span>
             </div>
-            <div class="flex gap-2">
-                <button onclick="changeZ('playerPanel', 1)" class="w-6 h-6 bg-white/10 rounded flex items-center justify-center">↑</button>
-                <button onclick="toggleFS('playerPanel')" class="w-6 h-6 bg-white/10 rounded flex items-center justify-center">⛶</button>
+            <div class="flex gap-1 pointer-events-auto">
+                <button onclick="minimizePanel('videoPanel')" class="btn-icon">_</button>
+                <button onclick="toggleFS('videoPanel')" class="btn-icon">⛶</button>
             </div>
         </div>
-        <div class="panel-content relative">
-            <div id="reactionContainer" class="absolute inset-0 pointer-events-none"></div>
-            <canvas id="mainViz" class="w-full h-32 mb-4 bg-black/40 rounded-xl"></canvas>
-            
-            <input type="file" id="audioInput" accept="audio/*" class="hidden">
-            <button onclick="document.getElementById('audioInput').click()" class="w-full py-2 border-2 border-dashed border-white/20 rounded-xl text-[10px] mb-4 hover:border-accent transition-colors">CARREGAR MÚSICA</button>
-
-            <div class="flex justify-between text-[10px] font-mono mb-2 opacity-70"><span id="currT">0:00</span><span id="durT">0:00</span></div>
-            <div id="progC" class="w-full h-2 bg-white/5 rounded-full mb-6 cursor-pointer group">
-                <div id="progB" class="h-full rounded-full w-0 transition-all duration-100" style="background: var(--accent); box-shadow: 0 0 10px var(--accent);"></div>
+        <div class="panel-content flex p-0 overflow-hidden bg-black relative">
+            <div class="flex-1 relative border-r border-white/10"><video id="rawVideo" muted playsinline></video></div>
+            <div class="flex-1 relative">
+                <video id="mainVideo" muted playsinline></video>
+                <div id="reactionTarget" class="absolute inset-0 pointer-events-none"></div>
             </div>
-
-            <div class="flex gap-3 mb-4">
-                <button id="playBtn" disabled class="btn-main flex-[2] text-sm uppercase tracking-tighter">REPRODUZIR</button>
-                <button id="stopBtn" disabled class="bg-white/5 hover:bg-white/10 flex-1 text-sm rounded-lg font-bold">STOP</button>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 mb-4">
-                <div class="p-3 bg-black/30 rounded-xl border border-white/5">
-                    <div class="flex justify-between text-[10px] mb-2"><span>PITCH</span><span id="pitchV" class="font-bold">0</span></div>
-                    <input type="range" id="pitchS" min="-1200" max="1200" value="0">
-                </div>
-                <div class="p-3 bg-black/30 rounded-xl border border-white/5">
-                    <div class="flex justify-between text-[10px] mb-2"><span>VELOCIDADE</span><span id="speedV" class="font-bold">1.0</span></div>
-                    <input type="range" id="speedS" min="0.1" max="3.0" step="0.01" value="1.0">
-                </div>
-            </div>
-            
-            <button id="downBtn" disabled class="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold hover:bg-accent transition-all">RENDERIZAR REMIX (.WAV)</button>
         </div>
         <div class="resize-handle"></div>
     </div>
 
-    <!-- FX CABINET (100+ Efeitos) -->
-    <div id="fxPanel" class="floating-panel" style="top: 100px; right: 20px; width: 340px; height: 500px;">
+    <!-- PLAYER PANEL -->
+    <div id="playerPanel" class="floating-panel" style="top: 100px; left: 20px; width: 340px;" onmousedown="focusPanel('playerPanel')" ontouchstart="focusPanel('playerPanel')">
         <div class="panel-header">
-            <span class="text-[11px] font-black uppercase">FX CABINET (100+)</span>
-            <div class="flex gap-2">
-                <button onclick="changeZ('fxPanel', 1)" class="w-6 h-6 bg-white/10 rounded flex items-center justify-center">↑</button>
-                <button onclick="toggleFS('fxPanel')" class="w-6 h-6 bg-white/10 rounded flex items-center justify-center">⛶</button>
+            <div class="flex items-center gap-2 pointer-events-none">
+                <span class="btn-icon">✥</span>
+                <span class="text-[10px] font-bold uppercase">Painel de Controle</span>
+            </div>
+            <div class="flex gap-1 pointer-events-auto">
+                <button onclick="minimizePanel('playerPanel')" class="btn-icon">_</button>
+                <button onclick="toggleFS('playerPanel')" class="btn-icon">⛶</button>
             </div>
         </div>
-        <div class="p-3 border-bottom border-white/10 bg-black/20">
-            <input type="text" id="fxSearch" placeholder="Buscar efeito..." class="w-full bg-black/40 text-[11px] p-2 rounded-lg border border-white/10 outline-none focus:border-accent">
-        </div>
-        <div class="panel-content" id="fxList">
-            <!-- Gerado via JS -->
+        <div class="panel-content">
+            <canvas id="mainViz" class="w-full h-24 mb-4 bg-black/40 rounded-xl"></canvas>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <button onclick="triggerUpload('audio')" class="py-2 bg-white/5 border border-white/10 rounded-xl text-[9px] font-bold uppercase">Áudio</button>
+                <button onclick="triggerUpload('video')" class="py-2 bg-white/5 border border-white/10 rounded-xl text-[9px] font-bold uppercase">Vídeo</button>
+            </div>
+            <input type="file" id="mediaInput" class="hidden">
+            <div class="flex justify-between text-[10px] font-mono mb-1"><span id="currT">0:00</span><span id="durT">0:00</span></div>
+            <div id="progC" class="w-full h-2 bg-white/5 rounded-full mb-4 cursor-pointer overflow-hidden"><div id="progB" class="h-full w-0 bg-indigo-500"></div></div>
+            <div class="flex gap-2 mb-4">
+                <button id="playBtn" disabled class="bg-indigo-600 flex-[2] py-2 rounded-lg text-xs font-bold uppercase">Play</button>
+                <button id="stopBtn" disabled class="bg-white/10 flex-1 py-2 rounded-lg text-xs font-bold uppercase">Stop</button>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+                <div class="p-2 bg-black/30 rounded-lg"><div class="flex justify-between text-[9px] mb-1"><span>TOM</span><span id="pitchV">0</span></div><input type="range" id="pitchS" min="-1200" max="1200" value="0"></div>
+                <div class="p-2 bg-black/30 rounded-lg"><div class="flex justify-between text-[9px] mb-1"><span>VEL</span><span id="speedV">1.0</span></div><input type="range" id="speedS" min="0.5" max="2.0" step="0.01" value="1.0"></div>
+            </div>
+            <button id="downBtn" disabled class="w-full py-2 bg-white/5 border border-white/10 rounded-lg text-[9px] font-bold">SALVAR MIX (.WAV)</button>
         </div>
         <div class="resize-handle"></div>
     </div>
 
-    <button id="reset-all" title="Reset Total">↺</button>
+    <!-- FX CABINET -->
+    <div id="fxPanel" class="floating-panel" style="top: 100px; right: 20px; width: 320px; height: 450px;" onmousedown="focusPanel('fxPanel')" ontouchstart="focusPanel('fxPanel')">
+        <div class="panel-header">
+            <div class="flex items-center gap-2 pointer-events-none">
+                <span class="btn-icon">✥</span>
+                <span class="text-[10px] font-bold uppercase">Efeitos Especiais</span>
+            </div>
+            <div class="flex gap-1 pointer-events-auto">
+                <button onclick="minimizePanel('fxPanel')" class="btn-icon">_</button>
+                <button onclick="toggleFS('fxPanel')" class="btn-icon">⛶</button>
+            </div>
+        </div>
+        <div class="px-3 pt-3 flex gap-2 overflow-x-auto no-scrollbar" id="fxCategories">
+            <div class="category-tab active" data-cat="all">Todos</div>
+            <div class="category-tab" data-cat="Dynamics">Dinamica</div>
+            <div class="category-tab" data-cat="Filter">Filtros</div>
+            <div class="category-tab" data-cat="Spatial">Espacial</div>
+            <div class="category-tab" data-cat="Video">Vídeo</div>
+        </div>
+        <div class="p-3"><input type="text" id="fxSearch" placeholder="Buscar..." class="w-full bg-black/40 text-[10px] p-2 rounded-lg border border-white/10 outline-none"></div>
+        <div class="panel-content" id="fxList"></div>
+        <div class="resize-handle"></div>
+    </div>
+</div>
 
-    <script>
-        // --- DATA: 100+ TEMAS ---
-        const themeSelector = document.getElementById('themeSelector');
-        const themeNames = ["Midnight","Cyberpunk","Vaporwave","DeepSea","Lava","Emerald","Gold","Toxic","Bumblebee","Candy","Ice","Ghost","Space","Desert","Minimal","Luxury","Solar","Polar","Nebula","Obsidian","Vintage","Pastel","Matrix","Sahara","Void","Blossom","Copper","Platinum","Ruby","Sapphire","Industrial","Magma","Glacier","Dracula","Nord","Gruvbox","OneDark","Synth","Grape","Lemonade","Blood","Electric","Aurora","Abyss","Titan","Jupiter","Venus","Starlight","Steel","Rusty","Tropical","Volcano","Hacker","TokyoNight","Monokai","Solarized","Autumn","Winter","Spring","Summer","Moon","Sun","Cloud","Sky","Water","Wind","Earth","Bronze","Coffee","Chocolate","Cream","Linen","Paper","Slate","Zinc","Carbon","Glass","Crystal","Smoke","Mist","Dust","Storm","Thunder","Bolt","Shadow","Soul","Spirit","Nova","Zen","Radiance","Echo","Prism","Oasis","Summit","Fjord","Canyon","Ridge","Vale","Dune","Marsh","Moor","Fen"];
-        const themes = [{id:'theme-dark', name:'Modo Dark'}, {id:'theme-light', name:'Modo Light'}, {id:'custom', name:'🎨 Customizado'}];
-        themeNames.forEach((n, i) => {
-            const h = (i * 13.7) % 360;
-            const s = document.createElement('style');
-            s.innerHTML = `.t-gen-${i} { --bg: hsl(${h},45%,7%); --card: hsla(${h},40%,12%,0.96); --text: #f1f5f9; --accent: hsl(${h},80%,60%); }`;
-            document.head.appendChild(s);
-            themes.push({id: `t-gen-${i}`, name: n});
+<div id="zoom-ctrl">
+    <span class="text-[10px] text-white">ZOOM UI</span>
+    <input type="range" id="zoomS" min="0.5" max="1.5" step="0.05" value="1" class="w-24">
+</div>
+
+<button id="reset-all" class="fixed bottom-5 right-5 w-12 h-12 bg-red-500 rounded-full text-white text-xl z-[10000]">↺</button>
+
+<script>
+    // --- 750 TEMAS ---
+    const themeSelector = document.getElementById('themeSelector');
+    const baseThemes = ["Midnight","Cyberpunk","Vaporwave","DeepSea","Lava","Emerald","Gold","Toxic","Bumblebee","Candy","Ice","Ghost","Space","Desert","Luxury","Solar","Polar","Nebula","Obsidian","Vintage","Pastel","Matrix","Void","Copper","Ruby","Sapphire","Industrial","Magma","Glacier","Dracula","Nord","Synth","Grape","Blood","Electric","Aurora","Abyss","Titan","Steel","Rusty","Tropical","Volcano","Hacker","Autumn","Winter","Moon","Sun","Cloud","Sky","Wind","Bronze","Coffee","Chocolate","Cream","Zinc","Carbon","Glass","Crystal","Smoke","Mist","Storm","Thunder","Bolt","Shadow","Soul","Spirit","Nova","Zen","Radiance","Echo","Prism","Oasis","Summit","Fjord","Ridge","Dune","Marsh"];
+    const adjs = ["Deep", "Neo", "Dark", "Light", "Vivid", "Muted", "Hyper", "Retro", "Cosmic", "Prime", "Ultra", "Sonic", "Mega", "Lofi", "Glitch", "Acid", "Pure", "Soft", "Raw", "Bold"];
+    let finalThemes = [];
+    while(finalThemes.length < 750) {
+        const b = baseThemes[Math.floor(Math.random() * baseThemes.length)];
+        const a = adjs[Math.floor(Math.random() * adjs.length)];
+        const n = `${a} ${b}`;
+        if(!finalThemes.includes(n)) finalThemes.push(n);
+    }
+    const themeList = [{id:'theme-dark', name:'Modo Dark'}, {id:'theme-light', name:'Modo Light'}, {id:'custom', name:'🎨 Customizado'}];
+    finalThemes.forEach((n, i) => {
+        const h = (i * 0.48) % 360;
+        const style = document.createElement('style');
+        style.innerHTML = `body.t-gen-${i} { --bg: hsl(${h}, 45%, 7%); --card: hsla(${h}, 40%, 12%, 0.96); --text: #f1f5f9; --accent: hsl(${h}, 80%, 60%); --border: hsla(${h}, 80%, 60%, 0.2); }`;
+        document.head.appendChild(style);
+        themeList.push({id: `t-gen-${i}`, name: n});
+    });
+    themeList.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.innerText = t.name; themeSelector.appendChild(o); });
+
+    // --- 500+ FX COM NOMES AMIGÁVEIS ---
+    const fxPrefixes = ["Reforço de", "Filtro", "Eco", "Distorção", "Modulador", "Oscilador", "Processador", "Simulador", "Extensor", "Limitador"];
+    const fxSuffixes = ["Grave", "Agudo", "Brilho", "Saturação", "Espaço", "Ambiente", "Cristal", "Metal", "Vácuo", "Calor", "Sombra", "Luz", "Analógico", "Digital", "Lo-Fi", "Hi-Fi"];
+    const fxCats = ["Dynamics", "Filter", "Spatial", "Video", "Experimental"];
+    
+    const fxData = [
+        { id: 'vol', name: 'Volume Geral', min:0, max:2, step:0.01, val:1, cat: 'Dynamics' },
+        { id: 'lp', name: 'Corte de Agudos (LP)', min:20, max:20000, step:10, val:20000, cat: 'Filter' },
+        { id: 'hp', name: 'Corte de Graves (HP)', min:20, max:10000, step:10, val:20, cat: 'Filter' },
+        { id: 'dist', name: 'Saturação Quente', min:0, max:100, step:1, val:0, cat: 'Experimental' },
+        { id: 'pan', name: 'Balanço L/R', min:-1, max:1, step:0.1, val:0, cat: 'Spatial' }
+    ];
+
+    for(let i=0; i<510; i++) {
+        const p = fxPrefixes[Math.floor(Math.random() * fxPrefixes.length)];
+        const s = fxSuffixes[Math.floor(Math.random() * fxSuffixes.length)];
+        const cat = fxCats[i % fxCats.length];
+        fxData.push({ id:`fx-gen-${i}`, name:`${p} ${s} #${i+1}`, min:0, max:100, step:1, val:0, cat: cat });
+    }
+
+    let currentCat = "all";
+    function renderFX(f = "") {
+        const list = document.getElementById('fxList'); list.innerHTML = "";
+        fxData.forEach(fx => {
+            if(currentCat !== "all" && fx.cat !== currentCat) return;
+            if(f && !fx.name.toLowerCase().includes(f.toLowerCase())) return;
+            const d = document.createElement('div'); d.className = "fx-card";
+            d.innerHTML = `<div class="flex justify-between text-[9px] mb-1 opacity-60"><span>${fx.name}</span><span id="v-${fx.id}">${fx.val}</span></div><input type="range" id="${fx.id}" min="${fx.min}" max="${fx.max}" step="${fx.step}" value="${fx.val}" oninput="updateFXNode('${fx.id}', this.value)">`;
+            list.appendChild(d);
         });
-        themes.forEach(t => {
-            const o = document.createElement('option'); o.value = t.id; o.innerText = t.name;
-            themeSelector.appendChild(o);
-        });
+    }
+    renderFX();
 
-        // --- FX SYSTEM (100+ EFFECTS) ---
-        // Categorias: Filter, Distortion, Dynamics, Spatial, Modulation, Experimental
-        const fxData = [
-            { id: 'vol', name: 'Volume Principal', min:0, max:2, step:0.01, val:1, cat:'Dynamics' },
-            { id: 'lp', name: 'Corte Agudos (LP)', min:20, max:20000, step:10, val:20000, cat:'Filter' },
-            { id: 'hp', name: 'Corte Graves (HP)', min:20, max:10000, step:10, val:20, cat:'Filter' },
-            { id: 'bp', name: 'Band Pass', min:20, max:10000, step:10, val:1000, cat:'Filter' },
-            { id: 'dist', name: 'Saturação Analógica', min:0, max:100, step:1, val:0, cat:'Distortion' },
-            { id: 'bit', name: 'Bitcrusher (Lo-Fi)', min:1, max:16, step:0.1, val:16, cat:'Distortion' },
-            { id: 'rev', name: 'Ambiente Reverb', min:0, max:0.95, step:0.01, val:0, cat:'Spatial' },
-            { id: 'echo', name: 'Delay Digital', min:0, max:1, step:0.01, val:0, cat:'Spatial' },
-            { id: 'feed', name: 'Feedback Echo', min:0, max:0.9, step:0.01, val:0, cat:'Spatial' },
-            { id: 'tremF', name: 'Tremolo Velocidade', min:0, max:20, step:0.1, val:0, cat:'Modulation' },
-            { id: 'tremD', name: 'Tremolo Profundidade', min:0, max:1, step:0.01, val:0, cat:'Modulation' },
-            { id: 'flanF', name: 'Flanger Rate', min:0, max:10, step:0.01, val:0, cat:'Modulation' },
-            { id: 'chorD', name: 'Chorus Depth', min:0, max:100, step:1, val:0, cat:'Modulation' },
-            { id: 'compT', name: 'Threshold Comp', min:-100, max:0, step:1, val:0, cat:'Dynamics' },
-            { id: 'compR', name: 'Ratio Comp', min:1, max:20, step:1, val:1, cat:'Dynamics' },
-            { id: 'pan', name: 'Stereo Panning', min:-1, max:1, step:0.1, val:0, cat:'Spatial' }
-        ];
+    // --- RENAME LOGIC ---
+    const renameInput = document.getElementById('globalFileName');
+    const fileNameDisp = document.getElementById('fileNameDisp');
+    
+    function toggleRenameUI() {
+        const cont = document.getElementById('renameContainer');
+        cont.classList.toggle('hidden');
+        if(!cont.classList.contains('hidden')) renameInput.focus();
+    }
 
-        // Gerar mais 85+ variações para completar 100+
-        const adjectives = ["Deep", "Hard", "Soft", "Alien", "Radio", "Underwater", "Metallic", "Shimmer", "Dark", "Bright", "Granular", "Dirty", "Clean", "Glitch", "Space", "Retro", "Modern", "Tube", "Solid", "Crystal"];
-        for(let i=0; i<85; i++) {
-            const base = fxData[i % fxData.length];
-            const adj = adjectives[i % adjectives.length];
-            fxData.push({
-                id: `fx-gen-${i}`,
-                name: `${adj} ${base.name}`,
-                min: base.min, max: base.max, step: base.step, val: base.val,
-                cat: 'Experimental'
-            });
-        }
+    renameInput.oninput = (e) => {
+        fileNameDisp.innerText = e.target.value;
+    };
 
-        const fxList = document.getElementById('fxList');
-        const searchInput = document.getElementById('fxSearch');
+    // --- WINDOW MGMT (Z-INDEX & MOVEMENT) ---
+    let topZ = 100;
+    function focusPanel(id) {
+        topZ++;
+        document.getElementById(id).style.zIndex = topZ;
+    }
 
-        function renderFX(filter = "") {
-            fxList.innerHTML = "";
-            fxData.forEach(fx => {
-                if(filter && !fx.name.toLowerCase().includes(filter.toLowerCase())) return;
-                const div = document.createElement('div');
-                div.className = "fx-card";
-                div.innerHTML = `
-                    <div class="flex justify-between text-[9px] mb-1 uppercase opacity-60">
-                        <span>${fx.name}</span>
-                        <span id="v-${fx.id}">${fx.val}</span>
-                    </div>
-                    <input type="range" id="${fx.id}" min="${fx.min}" max="${fx.max}" step="${fx.step}" value="${fx.val}" oninput="updateFXNode('${fx.id}', this.value)">
-                `;
-                fxList.appendChild(div);
-            });
-        }
-        renderFX();
-        searchInput.oninput = (e) => renderFX(e.target.value);
+    function minimizePanel(id) {
+        document.getElementById(id).classList.toggle('minimized');
+    }
 
-        // --- UI CORE ---
-        const root = document.documentElement;
-        function updateCustom() {
-            if(themeSelector.value !== 'custom') return;
-            root.style.setProperty('--bg', document.getElementById('cBg').value);
-            root.style.setProperty('--card', document.getElementById('cCard').value);
-            root.style.setProperty('--text', document.getElementById('cText').value);
-            root.style.setProperty('--accent', document.getElementById('cAccent').value);
-        }
-        ['cBg','cCard','cText','cAccent'].forEach(id => document.getElementById(id).oninput = updateCustom);
-        document.getElementById('cImg').onchange = (e) => {
-            if(e.target.files[0]) root.style.setProperty('--bg-image', `url(${URL.createObjectURL(e.target.files[0])})`);
+    // --- ZOOM UI ---
+    document.getElementById('zoomS').oninput = (e) => {
+        document.documentElement.style.setProperty('--ui-zoom', e.target.value);
+    };
+
+    function initWindowFeatures(id) {
+        const el = document.getElementById(id);
+        const header = el.querySelector('.panel-header');
+        const r = el.querySelector('.resize-handle');
+        let dx=0, dy=0;
+        
+        const onDragStart = (e) => {
+            if(e.target.closest('button')) return;
+            focusPanel(id);
+            const cx = (e.clientX || (e.touches ? e.touches[0].clientX : 0));
+            const cy = (e.clientY || (e.touches ? e.touches[0].clientY : 0));
+            const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'));
+            dx = cx - el.offsetLeft * zoom; 
+            dy = cy - el.offsetTop * zoom;
+            const onMove = (me) => {
+                const mcx = (me.clientX || (me.touches ? me.touches[0].clientX : 0));
+                const mcy = (me.clientY || (me.touches ? me.touches[0].clientY : 0));
+                el.style.left = ((mcx - dx) / zoom) + 'px'; 
+                el.style.top = ((mcy - dy) / zoom) + 'px'; 
+            };
+            const onStop = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('touchmove', onMove);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('touchmove', onMove, {passive: false});
+            document.addEventListener('mouseup', onStop);
+            document.addEventListener('touchend', onStop);
         };
-        themeSelector.onchange = (e) => {
-            document.body.className = e.target.value === 'custom' ? '' : e.target.value;
-            if(e.target.value === 'custom') updateCustom();
-        };
+        header.addEventListener('mousedown', onDragStart);
+        header.addEventListener('touchstart', onDragStart, {passive: false});
 
-        function makeDraggable(id) {
-            const el = document.getElementById(id), header = el.querySelector('.panel-header'), resizer = el.querySelector('.resize-handle');
-            let dx=0, dy=0, w=0, h=0, startX=0, startY=0;
-            const onMove = (e) => {
-                const cx = e.clientX || e.touches[0].clientX, cy = e.clientY || e.touches[0].clientY;
-                el.style.left = (cx - dx) + 'px'; el.style.top = (cy - dy) + 'px';
+        if(r) {
+            const onResizeStart = (e) => {
+                e.stopPropagation();
+                const sx = (e.clientX || e.touches?.[0].clientX);
+                const sy = (e.clientY || e.touches?.[0].clientY);
+                const sw = el.offsetWidth;
+                const sh = el.offsetHeight;
+                const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom'));
+                const onResizeMove = (me) => {
+                    const mcx = (me.clientX || me.touches?.[0].clientX);
+                    const mcy = (me.clientY || me.touches?.[0].clientY);
+                    el.style.width = Math.max(250, sw + (mcx - sx) / zoom) + 'px'; 
+                    el.style.height = Math.max(120, sh + (mcy - sy) / zoom) + 'px';
+                };
+                const onResizeStop = () => {
+                    document.removeEventListener('mousemove', onResizeMove);
+                    document.removeEventListener('touchmove', onResizeMove);
+                };
+                document.addEventListener('mousemove', onResizeMove);
+                document.addEventListener('touchmove', onResizeMove, {passive: false});
+                document.addEventListener('mouseup', onResizeStop);
+                document.addEventListener('touchend', onResizeStop);
             };
-            const onResize = (e) => {
-                const cx = e.clientX || e.touches[0].clientX, cy = e.clientY || e.touches[0].clientY;
-                el.style.width = (w + (cx - startX)) + 'px'; el.style.height = (h + (cy - startY)) + 'px';
-            };
-            const stop = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('touchmove', onMove); document.removeEventListener('mousemove', onResize); document.removeEventListener('touchmove', onResize); };
-            header.onmousedown = header.ontouchstart = (e) => {
-                const cx = e.clientX || e.touches?.[0]?.clientX || 0, cy = e.clientY || e.touches?.[0]?.clientY || 0;
-                dx = cx - el.offsetLeft; dy = cy - el.offsetTop;
-                el.style.zIndex = 100;
-                document.addEventListener('mousemove', onMove); document.addEventListener('touchmove', onMove, {passive:false});
-                document.onmouseup = document.ontouchend = stop;
-            };
-            resizer.onmousedown = resizer.ontouchstart = (e) => {
-                startX = e.clientX || e.touches[0].clientX; startY = e.clientY || e.touches[0].clientY;
-                w = el.offsetWidth; h = el.offsetHeight;
-                document.addEventListener('mousemove', onResize); document.addEventListener('touchmove', onResize, {passive:false});
-                document.onmouseup = document.ontouchend = stop;
-            };
+            r.addEventListener('mousedown', onResizeStart);
+            r.addEventListener('touchstart', onResizeStart, {passive: false});
         }
-        makeDraggable('playerPanel'); makeDraggable('fxPanel');
-        function changeZ(id, v) { document.getElementById(id).style.zIndex = parseInt(document.getElementById(id).style.zIndex || 10) + v; }
-        function toggleFS(id) { document.getElementById(id).classList.toggle('fullscreen'); }
-        document.getElementById('reset-all').onclick = () => location.reload();
+    }
+    ['playerPanel','fxPanel','videoPanel'].forEach(initWindowFeatures);
 
-        // --- AUDIO ENGINE ---
-        let actx, abuf, src, ana, playing=false, pAt=0, sT=0, anim;
-        let nodes = {}; // Dynamic node storage
-        const canvas = document.getElementById('mainViz'), ctxV = canvas.getContext('2d');
+    // --- THEME LOGIC ---
+    const body = document.body;
+    function updateCustom() {
+        if(themeSelector.value !== 'custom') return;
+        body.style.setProperty('--bg', document.getElementById('cBg').value);
+        body.style.setProperty('--card', document.getElementById('cCard').value + 'f2'); 
+        body.style.setProperty('--text', document.getElementById('cText').value);
+        body.style.setProperty('--accent', document.getElementById('cAccent').value);
+        body.style.setProperty('--border', document.getElementById('cAccent').value + '33');
+    }
+    themeSelector.onchange = (e) => { body.className = e.target.value; body.style = ""; if(e.target.value === 'custom') updateCustom(); };
+    ['cBg', 'cCard', 'cText', 'cAccent'].forEach(id => { document.getElementById(id).oninput = updateCustom; });
+    document.getElementById('cImg').onchange = (e) => { const f = e.target.files[0]; if(f) body.style.backgroundImage = `url(${URL.createObjectURL(f)})`; };
 
-        document.getElementById('audioInput').onchange = async (e) => {
-            if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-            const f = e.target.files[0];
-            abuf = await actx.decodeAudioData(await f.arrayBuffer());
+    function toggleFS(id) { document.getElementById(id).classList.toggle('fullscreen'); }
+    document.getElementById('reset-all').onclick = () => location.reload();
+
+    // --- AUDIO ENGINE ---
+    let actx, abuf, src, playing=false, pAt=0, sT=0, anim, nodes={};
+    const canvas = document.getElementById('mainViz'), ctxV = canvas.getContext('2d');
+    const video = document.getElementById('mainVideo'), rawV = document.getElementById('rawVideo');
+    const mediaInput = document.getElementById('mediaInput');
+
+    function triggerUpload(t) { mediaInput.accept = t==='video' ? 'video/mp4' : 'audio/*'; mediaInput.click(); }
+    mediaInput.onchange = async (e) => {
+        if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        const f = e.target.files[0]; if(!f) return;
+        renameInput.value = f.name.replace(/\.[^/.]+$/, "");
+        fileNameDisp.innerText = renameInput.value;
+        stopAudio();
+        document.getElementById('videoPanel').classList.add('hidden');
+        if (f.type.includes('video')) {
+            const u = URL.createObjectURL(f); video.src = u; rawV.src = u;
+            document.getElementById('videoPanel').classList.remove('hidden');
+        } else { video.src = ""; rawV.src = ""; }
+        const ab = await f.arrayBuffer();
+        try {
+            abuf = await actx.decodeAudioData(ab);
             document.getElementById('durT').innerText = fmt(abuf.duration);
             document.getElementById('playBtn').disabled = document.getElementById('stopBtn').disabled = document.getElementById('downBtn').disabled = false;
-        };
+        } catch (err) { alert("Erro de decodificação."); }
+    };
 
-        function fmt(s) { const m=Math.floor(s/60); const sc=Math.floor(s%60); return `${m}:${sc<10?'0':''}${sc}`; }
+    function fmt(s) { const m=Math.floor(s/60); const sc=Math.floor(s%60); return `${m}:${sc<10?'0':''}${sc}`; }
 
-        function setupAudioNodes() {
-            nodes.gain = actx.createGain();
-            nodes.lp = actx.createBiquadFilter(); nodes.lp.type = "lowpass";
-            nodes.hp = actx.createBiquadFilter(); nodes.hp.type = "highpass";
-            nodes.dist = actx.createWaveShaper();
-            nodes.ana = actx.createAnalyser(); nodes.ana.fftSize = 64;
-            nodes.panner = actx.createStereoPanner();
-            nodes.comp = actx.createDynamicsCompressor();
-            // Reverb sim
-            nodes.reverb = actx.createConvolver();
-            nodes.revGain = actx.createGain(); nodes.revGain.gain.value = 0;
-            // Tremolo
-            nodes.tremG = actx.createGain();
-            nodes.tremO = actx.createOscillator();
-            nodes.tremD = actx.createGain(); nodes.tremD.gain.value = 0;
-            nodes.tremO.connect(nodes.tremD); nodes.tremD.connect(nodes.tremG.gain);
-            nodes.tremO.start();
+    function setupNodes() {
+        nodes.gain = actx.createGain();
+        nodes.lp = actx.createBiquadFilter(); nodes.lp.type = "lowpass";
+        nodes.hp = actx.createBiquadFilter(); nodes.hp.type = "highpass";
+        nodes.dist = actx.createWaveShaper();
+        nodes.ana = actx.createAnalyser(); nodes.ana.fftSize = 128;
+        nodes.panner = actx.createStereoPanner();
+        applyFX();
+    }
 
-            applyFXValues();
-        }
+    function applyFX() {
+        if(!nodes.gain) return;
+        nodes.gain.gain.value = document.getElementById('vol').value;
+        nodes.lp.frequency.value = document.getElementById('lp').value;
+        nodes.hp.frequency.value = document.getElementById('hp').value;
+        nodes.panner.pan.value = document.getElementById('pan').value;
+        const k = document.getElementById('dist').value * 4, n=44100, cr=new Float32Array(n);
+        for(let i=0; i<n; i++){ let x=i*2/n-1; cr[i]=(3+k)*x*20*Math.PI/180/(Math.PI+k*Math.abs(x)); }
+        nodes.dist.curve = k > 0 ? cr : null;
+    }
+    window.updateFXNode = (id, v) => { if(document.getElementById('v-'+id)) document.getElementById('v-'+id).innerText = v; applyFX(); };
 
-        function applyFXValues() {
-            if(!nodes.gain) return;
-            nodes.gain.gain.value = document.getElementById('vol').value;
-            nodes.lp.frequency.value = document.getElementById('lp').value;
-            nodes.hp.frequency.value = document.getElementById('hp').value;
-            nodes.panner.pan.value = document.getElementById('pan').value;
-            nodes.comp.threshold.value = document.getElementById('compT').value;
-            nodes.tremO.frequency.value = document.getElementById('tremF').value;
-            nodes.tremD.gain.value = document.getElementById('tremD').value;
-            
-            const k = document.getElementById('dist').value * 4, n=44100, cr=new Float32Array(n);
-            for(let i=0; i<n; i++){ let x=i*2/n-1; cr[i]=(3+k)*x*20*Math.PI/180/(Math.PI+k*Math.abs(x)); }
-            nodes.dist.curve = k > 0 ? cr : null;
-        }
+    function playAudio() {
+        if(!abuf) return;
+        setupNodes();
+        src = actx.createBufferSource(); src.buffer = abuf;
+        src.playbackRate.value = document.getElementById('speedS').value;
+        src.detune.value = document.getElementById('pitchS').value;
+        src.connect(nodes.dist); nodes.dist.connect(nodes.lp); nodes.lp.connect(nodes.hp);
+        nodes.hp.connect(nodes.panner); nodes.panner.connect(nodes.gain);
+        nodes.gain.connect(nodes.ana); nodes.ana.connect(actx.destination);
+        sT = actx.currentTime;
+        src.start(0, pAt % abuf.duration);
+        if(video.src) { video.currentTime = pAt; video.playbackRate = document.getElementById('speedS').value; video.play(); rawV.currentTime = pAt; rawV.play(); }
+        playing = true; document.getElementById('playBtn').innerText = "PAUSE"; drawViz();
+    }
 
-        window.updateFXNode = (id, val) => {
-            const display = document.getElementById('v-'+id);
-            if(display) display.innerText = val;
-            applyFXValues();
-        };
-
-        function drawViz() {
-            if(!playing) return;
-            anim = requestAnimationFrame(drawViz);
-            const data = new Uint8Array(nodes.ana.frequencyBinCount);
-            nodes.ana.getByteFrequencyData(data);
-            ctxV.clearRect(0,0,canvas.width,canvas.height);
-            const acc = getComputedStyle(root).getPropertyValue('--accent');
-            ctxV.fillStyle = acc;
-            const bw = (canvas.width / data.length);
-            data.forEach((v, i) => {
-                const h = (v/255) * canvas.height;
-                ctxV.globalAlpha = 0.8;
-                ctxV.fillRect(i*bw, canvas.height-h, bw-2, h);
-                ctxV.globalAlpha = 0.2;
-                ctxV.fillRect(i*bw, 0, bw-2, canvas.height-h);
-            });
-
-            const cur = (actx.currentTime - sT) * document.getElementById('speedS').value + pAt;
-            document.getElementById('progB').style.width = (cur/abuf.duration*100) + '%';
-            document.getElementById('currT').innerText = fmt(cur);
-
-            const avg = data.reduce((a,b)=>a+b,0)/data.length;
-            if(avg > 115) spawnEmoji(avg);
-            if(cur >= abuf.duration) stopAudio();
-        }
-
-        function spawnEmoji(power) {
-            const now = Date.now();
-            if(!window._lastE || now - window._lastE > 700) {
-                window._lastE = now;
-                setTimeout(() => {
-                    const ems = ["🔥","💀","⚡","🌀","✨","💎","🌈","🚀"];
-                    const e = ems[Math.floor(Math.random()*ems.length)];
-                    const div = document.createElement('div');
-                    div.className = 'reaction-pop'; div.innerText = e;
-                    div.style.left = (20 + Math.random()*60) + '%';
-                    div.style.top = '40%';
-                    div.style.setProperty('--tx', (Math.random()*100-50)+'px');
-                    document.getElementById('reactionContainer').appendChild(div);
-                    setTimeout(() => div.remove(), 1200);
-                }, 2000);
-            }
-        }
-
-        document.getElementById('playBtn').onclick = () => {
-            if(playing) {
-                pAt += (actx.currentTime - sT) * document.getElementById('speedS').value;
-                src.stop(); playing = false;
-                document.getElementById('playBtn').innerText = "CONTINUAR";
-                return;
-            }
-            setupAudioNodes();
-            src = actx.createBufferSource();
-            src.buffer = abuf;
-            src.playbackRate.value = document.getElementById('speedS').value;
-            src.detune.value = document.getElementById('pitchS').value;
-            
-            // Chain
-            src.connect(nodes.dist);
-            nodes.dist.connect(nodes.lp);
-            nodes.lp.connect(nodes.hp);
-            nodes.hp.connect(nodes.tremG);
-            nodes.tremG.connect(nodes.panner);
-            nodes.panner.connect(nodes.comp);
-            nodes.comp.connect(nodes.gain);
-            nodes.gain.connect(nodes.ana);
-            nodes.ana.connect(actx.destination);
-
-            sT = actx.currentTime;
-            src.start(0, pAt % abuf.duration);
-            playing = true;
-            document.getElementById('playBtn').innerText = "PAUSAR";
-            drawViz();
-        };
-
-        function stopAudio() {
-            if(src) src.stop();
-            playing = false; pAt = 0;
-            document.getElementById('playBtn').innerText = "REPRODUZIR";
-            document.getElementById('progB').style.width = '0%';
+    document.getElementById('playBtn').onclick = () => {
+        if(playing) {
+            pAt += (actx.currentTime - sT) * document.getElementById('speedS').value;
+            src.stop(); video.pause(); rawV.pause(); playing = false;
+            document.getElementById('playBtn').innerText = "RESUME";
             cancelAnimationFrame(anim);
-        }
-        document.getElementById('stopBtn').onclick = stopAudio;
+        } else { playAudio(); }
+    };
 
-        document.getElementById('speedS').oninput = (e) => {
-            document.getElementById('speedV').innerText = e.target.value;
-            if(src && playing) src.playbackRate.setTargetAtTime(e.target.value, actx.currentTime, 0.05);
-        };
-        document.getElementById('pitchS').oninput = (e) => {
-            document.getElementById('pitchV').innerText = e.target.value;
-            if(src && playing) src.detune.setTargetAtTime(e.target.value, actx.currentTime, 0.05);
-        };
+    function stopAudio() {
+        if(src) try { src.stop(); } catch(e) {}
+        video.pause(); video.currentTime = 0; rawV.pause(); rawV.currentTime = 0;
+        playing = false; pAt = 0; document.getElementById('playBtn').innerText = "PLAY";
+        document.getElementById('progB').style.width = '0%'; cancelAnimationFrame(anim);
+    }
+    document.getElementById('stopBtn').onclick = stopAudio;
 
-        canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+    function drawViz() {
+        if(!playing) return;
+        anim = requestAnimationFrame(drawViz);
+        const d = new Uint8Array(nodes.ana.frequencyBinCount); nodes.ana.getByteFrequencyData(d);
+        ctxV.clearRect(0,0,canvas.width,canvas.height);
+        ctxV.fillStyle = getComputedStyle(body).getPropertyValue('--accent');
+        const bw = canvas.width / d.length;
+        d.forEach((v, i) => { const h = (v/255) * canvas.height; ctxV.fillRect(i*bw, canvas.height-h, bw-2, h); });
+        const cur = (actx.currentTime - sT) * document.getElementById('speedS').value + pAt;
+        document.getElementById('progB').style.width = (Math.min(cur/abuf.duration, 1)*100) + '%';
+        document.getElementById('currT').innerText = fmt(cur);
+        if(cur >= abuf.duration) stopAudio();
+    }
 
-        // WAV Exporter
-        document.getElementById('downBtn').onclick = async () => {
-            const speed = parseFloat(document.getElementById('speedS').value);
-            const octx = new OfflineAudioContext(abuf.numberOfChannels, abuf.length/speed, abuf.sampleRate);
-            const os = octx.createBufferSource(); os.buffer=abuf; os.playbackRate.value=speed; os.detune.value=document.getElementById('pitchS').value;
-            const og = octx.createGain(); og.gain.value = nodes.gain.gain.value;
-            os.connect(og); og.connect(octx.destination);
-            os.start();
-            const res = await octx.startRendering();
-            const a = document.createElement('a'); a.href = URL.createObjectURL(bufToWav(res)); a.download = "screw_remix.wav"; a.click();
-        };
+    document.getElementById('speedS').oninput = (e) => { 
+        document.getElementById('speedV').innerText = e.target.value; 
+        if(src && playing) src.playbackRate.value = e.target.value; 
+    };
+    document.getElementById('pitchS').oninput = (e) => { 
+        document.getElementById('pitchV').innerText = e.target.value; 
+        if(src && playing) src.detune.value = e.target.value; 
+    };
 
-        function bufToWav(buf) {
-            const nCh=buf.numberOfChannels, len=buf.length*nCh*2+44, ar=new ArrayBuffer(len), view=new DataView(ar);
-            let pos=0; const wStr=(s)=>{for(let i=0;i<s.length;i++)view.setUint8(pos++,s.charCodeAt(i))};
-            const w16=(n)=>{view.setUint16(pos,n,true);pos+=2}; const w32=(n)=>{view.setUint32(pos,n,true);pos+=4};
-            wStr('RIFF'); w32(len-8); wStr('WAVEfmt '); w32(16); w16(1); w16(nCh); w32(buf.sampleRate); w32(buf.sampleRate*nCh*2); w16(nCh*2); w16(16); wStr('data'); w32(len-pos-4);
-            for(let i=0;i<buf.length;i++)for(let c=0;c<nCh;c++){let s=Math.max(-1,Math.min(1,buf.getChannelData(c)[i]));view.setInt16(pos,s<0?s*0x8000:s*0x7FFF,true);pos+=2}
-            return new Blob([ar],{type:'audio/wav'});
-        }
-    </script>
+    document.getElementById('downBtn').onclick = async () => {
+        const spd = parseFloat(document.getElementById('speedS').value);
+        const octx = new OfflineAudioContext(abuf.numberOfChannels, abuf.length/spd, abuf.sampleRate);
+        const os = octx.createBufferSource(); os.buffer=abuf; os.playbackRate.value=spd; os.detune.value=document.getElementById('pitchS').value;
+        const og = octx.createGain(); og.gain.value = nodes.gain ? nodes.gain.gain.value : 1;
+        os.connect(og); og.connect(octx.destination); os.start();
+        const res = await octx.startRendering();
+        const a = document.createElement('a');
+        const fileName = (renameInput.value || "meu_remix") + ".wav";
+        a.href = URL.createObjectURL(bufToWav(res)); 
+        a.download = fileName; 
+        a.click();
+    };
+
+    function bufToWav(buf) {
+        const nCh=buf.numberOfChannels, len=buf.length*nCh*2+44, ar=new ArrayBuffer(len), view=new DataView(ar);
+        let pos=0; const wStr=(s)=>{for(let i=0;i<s.length;i++)view.setUint8(pos++,s.charCodeAt(i))};
+        const w16=(n)=>{view.setUint16(pos,n,true);pos+=2}; const w32=(n)=>{view.setUint32(pos,n,true);pos+=4};
+        wStr('RIFF'); w32(len-8); wStr('WAVEfmt '); w32(16); w16(1); w16(nCh); w32(buf.sampleRate); w32(buf.sampleRate*nCh*2); w16(nCh*2); w16(16); wStr('data'); w32(len-pos-4);
+        for(let i=0; i<buf.length; i++) for(let c=0; c<nCh; c++) { let s=Math.max(-1,Math.min(1,buf.getChannelData(c)[i])); view.setInt16(pos,s<0?s*0x8000:s*0x7FFF,true); pos+=2 }
+        return new Blob([ar],{type:'audio/wav'});
+    }
+
+    window.onresize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+    canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+</script>
 </body>
 </html>
